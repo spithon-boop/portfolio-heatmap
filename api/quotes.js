@@ -32,6 +32,10 @@ export default async function handler(req, res) {
     const iAvg   = find("precio medio");
     const iPrice = find("precio actual");
     const iVal   = find("valor actual");
+    const i1d    = find("chg1d");
+    const i1w    = find("chg1w");
+    const i1m    = find("chg1m");
+    const iYtd   = find("chgytd");
 
     const holdings = [];
     for (const row of rows) {
@@ -46,8 +50,27 @@ export default async function handler(req, res) {
       const price  = toNum(c[iPrice]);
       const value  = toNum(c[iVal]) || (shares * price);
 
+      // Historical changes — multiply by 100 if stored as decimal (0.05 = 5%)
+      const toChg = (cell) => {
+        const v = toNum(cell);
+        if (v === 0) return null;
+        // GOOGLEFINANCE changepct returns whole number (e.g. 2.5 = 2.5%)
+        // Historical returns decimal (e.g. 0.025 = 2.5%) — detect and normalize
+        return Math.abs(v) < 1 ? v * 100 : v;
+      };
+
       if (shares > 0 && avg > 0 && price > 0) {
-        holdings.push({ symbol: t, shares, avgCost: avg, price, value });
+        holdings.push({
+          symbol:  t,
+          shares,
+          avgCost: avg,
+          price,
+          value,
+          chg1d:   i1d  !== -1 ? toChg(c[i1d])  : null,
+          chg1w:   i1w  !== -1 ? toChg(c[i1w])  : null,
+          chg1m:   i1m  !== -1 ? toChg(c[i1m])  : null,
+          chgYtd:  iYtd !== -1 ? toChg(c[iYtd]) : null,
+        });
       }
     }
 
