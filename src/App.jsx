@@ -59,7 +59,7 @@ function getColor(pct) {
 const GAP=2;
 const fmtPct=v=>`${(v||0)>=0?"+":""}${(v||0).toFixed(2)}%`;
 const fmtUSD=v=>`$${Math.abs(v||0).toLocaleString("en",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-const fmtK=v=>{ const a=Math.abs(v||0),s=(v||0)>=0?"+":"-"; return a>=1e6?`${s}$${(a/1e6).toFixed(1)}M`:a>=1e3?`${s}$${(a/1e3).toFixed(1)}K`:`${s}$${a.toFixed(0)}`; };
+const fmtK=v=>{ const a=Math.abs(v||0),s=(v||0)>=0?"+":"-"; return `${s}$${a.toLocaleString("en",{minimumFractionDigits:0,maximumFractionDigits:0})}`; };
 const pnlCol=v=>(v||0)>=0?"#00dd44":"#ff3322";
 
 const METRICS=[
@@ -123,6 +123,8 @@ export default function App() {
 
   const cur=METRICS.find(m=>m.key===metric);
   const getCellPct=c=>c[cur.pctKey]??null;
+  // Fall back to pnlPct for color when metric has no data — never show black map
+  const getCellColor=c=>{ const pct=getCellPct(c); return getColor(pct!==null?pct:c.pnlPct); };
   const getCellDisp=c=>{
     const pct=getCellPct(c);
     if (pct===null) return "—";
@@ -209,7 +211,7 @@ export default function App() {
           <svg style={{position:"absolute",inset:0,display:"block"}} width={sz.w} height={sz.h}>
             {layout.map(cell=>{
               const pct=getCellPct(cell);
-              const bg=getColor(pct);
+              const bg=getCellColor(cell);
               const disp=getCellDisp(cell);
               const noData=pct===null;
               const cw=Math.max(0,cell.w-GAP*2), ch=Math.max(0,cell.h-GAP*2);
