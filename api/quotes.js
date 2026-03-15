@@ -16,31 +16,22 @@ export default async function handler(req, res) {
     const rows = json?.table?.rows || [];
     const cols = json?.table?.cols || [];
 
-    // Log column names for debugging
-    const colLabels = cols.map((c,i) => ({ i, label: c.label }));
-
-    // Find columns by label (case insensitive)
+    // Find column indices by label
     const find = (...names) => {
       for (const name of names) {
-        const idx = cols.findIndex(c => (c.label||"").trim().toLowerCase().includes(name.toLowerCase()));
+        const idx = cols.findIndex(c =>
+          (c.label||"").trim().toLowerCase().includes(name.toLowerCase())
+        );
         if (idx !== -1) return idx;
       }
       return -1;
     };
 
-    const iSym   = find("ticker", "symbol");
-    const iShr   = find("acciones", "shares", "quantity");
-    const iAvg   = find("precio medio", "avg cost", "purchase", "coste");
-    const iPrice = find("precio actual", "current price", "price");
-
-    // Return debug info if columns not found
-    if (iSym === -1 || iShr === -1) {
-      return res.status(200).json({ 
-        debug: true, 
-        columns: colLabels,
-        sample: rows.slice(0,3).map(r => r.c?.map(c => c?.v))
-      });
-    }
+    const iSym   = find("ticker");
+    const iShr   = find("acciones");
+    const iAvg   = find("precio medio");
+    const iPrice = find("precio actual");
+    const iVal   = find("valor actual");
 
     const holdings = [];
     for (const row of rows) {
@@ -52,31 +43,15 @@ export default async function handler(req, res) {
 
       const shares = toNum(c[iShr]);
       const avg    = toNum(c[iAvg]);
-      const price  = iPrice !== -1 ? toNum(c[iPrice]) : 0;
+      const price  = toNum(c[iPrice]);
+      const value  = toNum(c[iVal]) || (shares * price);
 
-      // Sanity check: price should be within 20x of avgCost
-      // If price looks wrong (e.g. 100x avgCost), fall back to avgCost
-      const safePrice = (price > 0 && price < avg * 20 && price > avg / 20) ? price : avg;
-
-      if (shares > 0 && avg > 0) {
-        holdings.push({
-          symbol:  t,
-          shares,
-          avgCost: avg,
-          price:   safePrice,
-          value:   shares * safePrice,
-        });
+      if (shares > 0 && avg > 0 && price > 0) {
+        holdings.push({ symbol: t, shares, avgCost: avg, price, value });
       }
     }
 
-    if (!holdings.length) {
-      return res.status(200).json({ 
-        debug: true, 
-        message: "No holdings found",
-        columns: colLabels,
-        rowCount: rows.length
-      });
-    }
+    if (!holdings.length) throw new Error("No se encontraron posiciones. Columnas: " + cols.map(c=>c.label).join(", "));
 
     return res.status(200).json({ holdings });
   } catch (err) {
@@ -84,11 +59,30 @@ export default async function handler(req, res) {
   }
 }
 
+// Google Visualization API returns numbers as actual JS numbers — no parsing needed
+// But formatted values (f) use locale format. Always use .v (raw value) not .f
 function toNum(cell) {
   if (!cell) return 0;
+  // .v is always the raw numeric value from Google — use it directly
   if (typeof cell.v === "number") return cell.v;
-  if (typeof cell.v === "string") {
-    return parseFloat(cell.v.replace(/[^0-9.-]/g, "")) || 0;
+  // Fallback: parse formatted string (cell.f) removing currency symbols
+  // Google uses locale format e.g. "$322,16" (ES) or "$322.16" (EN)
+  const s = String(cell.f || cell.v || "").replace(/[^0-9.,\-]/g, "").trim();
+  if (!s) return 0;
+  // Detect format: if last separator is comma and only 2 digits after → EU decimal
+  const lastComma = s.lastIndexOf(",");
+  const lastDot   = s.lastIndexOf(".");
+  if (lastComma > lastDot && s.length - lastComma === 3) {
+    // EU format: 1.234,56
+    return parseFloat(s.replace(/\./g, "").replace(",", ".")) || 0;
   }
-  return 0;
+  if (lastDot > lastComma && s.length - lastDot === 3) {
+    // US format: 1,234.56 — but could also be 1.234 (no decimals)
+    return parseFloat(s.replace(/,/g, "")) || 0;
+  }
+  // Single separator — if comma, treat as decimal
+  if (lastComma !== -1 && lastDot === -1) {
+    return parseFloat(s.replace(",", ".")) || 0;
+  }
+  return parseFloat(s.replace(/,/g, "")) || 0;
 }
