@@ -121,6 +121,23 @@ export default function App() {
   const totalPnL=totalValue-totalCost;
   const totalPnLPct=totalCost>0?(totalPnL/totalCost)*100:0;
 
+  // Calculate P&L for current metric to show in header
+  const metricPnlData = (() => {
+    if (metric === "total") {
+      return { usd: totalPnL, pct: totalPnLPct, label: "P&L TOTAL" };
+    }
+    const pctKey = METRICS.find(m=>m.key===metric)?.pctKey;
+    const label = METRICS.find(m=>m.key===metric)?.label;
+    if (!pctKey) return null;
+    // Weighted average pct across all items that have data
+    const itemsWithData = items.filter(i => i[pctKey] != null);
+    if (!itemsWithData.length) return null;
+    const totalWithData = itemsWithData.reduce((s,i)=>s+i.value,0);
+    const wavgPct = itemsWithData.reduce((s,i)=>s+(i[pctKey]*i.value),0) / totalWithData;
+    const totalUsd = itemsWithData.reduce((s,i)=>s+(i[pctKey]/100*i.value),0);
+    return { usd: totalUsd, pct: wavgPct, label: `P&L ${label.toUpperCase()}` };
+  })();
+
   const cur=METRICS.find(m=>m.key===metric);
   const getCellPct=c=>c[cur.pctKey]??null;
   // Fall back to pnlPct for color when metric has no data — never show black map
@@ -174,7 +191,11 @@ export default function App() {
         <div style={{padding:"6px 12px",borderBottom:`1px solid ${BRD}`,display:"flex",alignItems:"center",flexShrink:0,background:HDR,overflowX:"auto",gap:0}}>
           <SB label="VALOR TOTAL" value={fmtUSD(totalValue)}/>
           <div style={{width:1,background:BRD,margin:"0 14px",alignSelf:"stretch"}}/>
-          <SB label="P&L TOTAL" value={`${totalPnL>=0?"+":"-"}${fmtUSD(totalPnL)}`} sub={fmtPct(totalPnLPct)} color={pnlCol(totalPnLPct)}/>
+          <SB
+            label={metricPnlData?.label || "P&L TOTAL"}
+            value={metricPnlData ? `${metricPnlData.usd>=0?"+":"-"}${fmtUSD(metricPnlData.usd)}` : `${totalPnL>=0?"+":"-"}${fmtUSD(totalPnL)}`}
+            sub={metricPnlData ? fmtPct(metricPnlData.pct) : fmtPct(totalPnLPct)}
+            color={pnlCol(metricPnlData?.pct ?? totalPnLPct)}/>
           <div style={{width:1,background:BRD,margin:"0 14px",alignSelf:"stretch"}}/>
           <SB label="POSICIONES" value={String(items.length)}/>
           {lastUpdated && <span style={{marginLeft:"auto",fontSize:9,color:DIM,flexShrink:0}}>{lastUpdated.toLocaleTimeString("es",{hour:"2-digit",minute:"2-digit"})}</span>}
