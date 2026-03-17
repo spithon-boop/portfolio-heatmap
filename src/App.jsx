@@ -58,8 +58,9 @@ function getColor(pct) {
 
 const GAP=2;
 const fmtPct=v=>`${(v||0)>=0?"+":""}${(v||0).toFixed(2)}%`;
-const fmtUSD=v=>`$${Math.abs(v||0).toLocaleString("en",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-const fmtK=v=>{ const a=Math.abs(v||0),s=(v||0)>=0?"+":"-"; return `${s}$${a.toLocaleString("en",{minimumFractionDigits:0,maximumFractionDigits:0})}`; };
+const fmtNum=(v,dec=2)=>Math.abs(v||0).toLocaleString("es-ES",{minimumFractionDigits:dec,maximumFractionDigits:dec});
+const fmtUSD=v=>`$${fmtNum(v,2)}`;
+const fmtK=v=>{ const a=Math.abs(v||0),s=(v||0)>=0?"+":"-"; return `${s}$${fmtNum(a,0)}`; };
 const pnlCol=v=>(v||0)>=0?"#00dd44":"#ff3322";
 
 const METRICS=[
@@ -281,7 +282,7 @@ export default function App() {
                       textAnchor="middle" fill="rgba(255,255,255,0.5)"
                       fontSize={wgtFs} fontFamily="Arial,sans-serif"
                       style={{userSelect:"none"}}>
-                      {(cell.value/totalValue*100).toFixed(1)}%
+                      {dispMode==="usd" ? fmtUSD(cell.value) : (cell.value/totalValue*100).toFixed(1)+"%"}
                     </text>
                   )}
                 </g>
@@ -290,17 +291,7 @@ export default function App() {
           </svg>
         )}
 
-        {/* Finviz-style legend */}
-        {layout.length>0&&(
-          <div style={{position:"absolute",bottom:8,right:10,display:"flex",gap:4,alignItems:"center",background:"rgba(0,0,0,0.75)",padding:"5px 8px",borderRadius:3}}>
-            {[-10,-5,-2,0,2,5,10].map(v=>(
-              <div key={v} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                <div style={{width:22,height:10,background:getColor(v),borderRadius:1}}/>
-                <span style={{fontSize:8,color:"#666"}}>{v>0?"+":""}{v}%</span>
-              </div>
-            ))}
-          </div>
-        )}
+
       </div>
 
       {/* Detail panel */}
