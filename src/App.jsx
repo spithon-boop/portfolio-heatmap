@@ -1,330 +1,323 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 
+/* ─────────────────────────  Treemap (squarified)  ───────────────────────── */
 function buildTreemap(items, W, H) {
-  if (!items.length || W<=0 || H<=0) return [];
-  const total = items.reduce((s,i)=>s+i.value,0);
+  if (!items.length || W <= 0 || H <= 0) return [];
+  const total = items.reduce((s, i) => s + i.value, 0);
   if (!total) return [];
-  const nodes = items.map(i=>({...i, area:(i.value/total)*W*H}));
-  return layout(nodes, 0, 0, W, H);
+  const nodes = items.map(i => ({ ...i, area: (i.value / total) * W * H }));
+  return squarify(nodes, 0, 0, W, H);
 }
 
-function layout(nodes, x, y, w, h) {
+function squarify(nodes, x, y, w, h) {
   if (!nodes.length) return [];
-  if (nodes.length===1) return [{...nodes[0],x,y,w,h}];
-  const results=[];
-  let rem=[...nodes], rx=x, ry=y, rw=w, rh=h;
-  while (rem.length>0) {
-    if (rem.length===1) { results.push({...rem[0],x:rx,y:ry,w:rw,h:rh}); break; }
-    const row=[]; let rowA=0, prev=Infinity;
-    const side=Math.min(rw,rh);
-    for (let i=0;i<rem.length;i++) {
-      row.push(rem[i]); rowA+=rem[i].area;
-      const mx=Math.max(...row.map(r=>r.area)), mn=Math.min(...row.map(r=>r.area));
-      const ratio=Math.max((side*side*mx)/(rowA*rowA),(rowA*rowA)/(side*side*mn));
-      if (ratio>prev && i>0) { row.pop(); rowA-=rem[i].area; break; }
-      prev=ratio;
+  if (nodes.length === 1) return [{ ...nodes[0], x, y, w, h }];
+  const results = [];
+  let rem = [...nodes], rx = x, ry = y, rw = w, rh = h;
+  while (rem.length > 0) {
+    if (rem.length === 1) { results.push({ ...rem[0], x: rx, y: ry, w: rw, h: rh }); break; }
+    const row = []; let rowA = 0, prev = Infinity;
+    const side = Math.min(rw, rh);
+    for (let i = 0; i < rem.length; i++) {
+      row.push(rem[i]); rowA += rem[i].area;
+      const mx = Math.max(...row.map(r => r.area)), mn = Math.min(...row.map(r => r.area));
+      const ratio = Math.max((side * side * mx) / (rowA * rowA), (rowA * rowA) / (side * side * mn));
+      if (ratio > prev && i > 0) { row.pop(); rowA -= rem[i].area; break; }
+      prev = ratio;
     }
-    rem=rem.slice(row.length);
-    const rA=row.reduce((s,r)=>s+r.area,0);
-    if (rw>=rh) {
-      const cw=rA/rh; let cy=ry;
-      row.forEach(r=>{ const ch=(r.area/rA)*rh; results.push({...r,x:rx,y:cy,w:cw,h:ch}); cy+=ch; });
-      rx+=cw; rw-=cw;
+    rem = rem.slice(row.length);
+    const rA = row.reduce((s, r) => s + r.area, 0);
+    if (rw >= rh) {
+      const cw = rA / rh; let cy = ry;
+      row.forEach(r => { const ch = (r.area / rA) * rh; results.push({ ...r, x: rx, y: cy, w: cw, h: ch }); cy += ch; });
+      rx += cw; rw -= cw;
     } else {
-      const rh2=rA/rw; let cx=rx;
-      row.forEach(r=>{ const cw2=(r.area/rA)*rw; results.push({...r,x:cx,y:ry,w:cw2,h:rh2}); cx+=cw2; });
-      ry+=rh2; rh-=rh2;
+      const rh2 = rA / rw; let cx = rx;
+      row.forEach(r => { const cw2 = (r.area / rA) * rw; results.push({ ...r, x: cx, y: ry, w: cw2, h: rh2 }); cx += cw2; });
+      ry += rh2; rh -= rh2;
     }
-    if (rw<0.5||rh<0.5) break;
+    if (rw < 0.5 || rh < 0.5) break;
   }
   return results;
 }
 
-// Finviz exact color palette
-function getColor(pct) {
-  if (pct==null) return "#1a1a1a";
-  const v=Math.max(-10,Math.min(10,pct));
-  if (v>=0) {
-    const t=v/10;
-    const g=Math.round(60+t*195);
-    const r=Math.round(0+t*15);
-    return `rgb(${r},${g},0)`;
-  } else {
-    const t=Math.abs(v)/10;
-    const r=Math.round(60+t*195);
-    return `rgb(${r},0,0)`;
-  }
+/* ─────────────────────────  Google Finance palette  ─────────────────────────
+   3 intensidades por signo, relativas al mayor movimiento del mismo signo
+   (como hace Google Finance): pequeño → claro, medio → medio, grande → oscuro. */
+const PAL = {
+  up:   ["#64AE62", "#4A8A4B", "#1F4B22"],
+  down: ["#9C4B4F", "#883B3F", "#6A2528"],
+  flat: "#3C4043",
+  dotUp: "#8FE28F",
+  dotDown: "#F7A6A9",
+};
+// Umbral mínimo por métrica para que movimientos pequeños no salgan "oscuros"
+const FLOOR = { total: 5, "1d": 0.5, "1w": 1.5, "1m": 3, ytd: 5 };
+
+function makeColorScale(values, metricKey) {
+  const floor = FLOOR[metricKey] ?? 1;
+  const maxUp = Math.max(floor, ...values.filter(v => v > 0));
+  const maxDn = Math.max(floor, ...values.filter(v => v < 0).map(Math.abs));
+  return pct => {
+    if (pct == null || Math.abs(pct) < 0.005) return PAL.flat;
+    const t = Math.abs(pct) / (pct > 0 ? maxUp : maxDn);
+    const step = t < 0.18 ? 0 : t < 0.66 ? 1 : 2;
+    return (pct > 0 ? PAL.up : PAL.down)[step];
+  };
 }
 
-const GAP=2;
-const fmtPct=v=>`${(v||0)>=0?"+":""}${(v||0).toFixed(2)}%`;
-const fmtNum=(v,dec=2)=>Math.abs(v||0).toLocaleString("es-ES",{minimumFractionDigits:dec,maximumFractionDigits:dec});
-const fmtUSD=v=>`$${fmtNum(v,2)}`;
-const fmtK=v=>{ const a=Math.abs(v||0),s=(v||0)>=0?"+":"-"; return `${s}$${fmtNum(a,0)}`; };
-const pnlCol=v=>(v||0)>=0?"#00dd44":"#ff3322";
+/* ─────────────────────────  Nombres y logos  ───────────────────────── */
+const NAMES = {
+  NVDA: "NVIDIA", META: "Meta Platforms", MSFT: "Microsoft", GOOGL: "Alphabet", GOOG: "Alphabet",
+  AAPL: "Apple", AMZN: "Amazon", TSLA: "Tesla", CRWD: "CrowdStrike", DDOG: "Datadog",
+  SNDK: "SanDisk", AVGO: "Broadcom", VST: "Vistra", "BRK.B": "Berkshire Hathaway",
+  "BRK-B": "Berkshire Hathaway", LLY: "Eli Lilly", SPCX: "SPAC & New Issue ETF", AMD: "AMD",
+  NFLX: "Netflix", PLTR: "Palantir", TSM: "TSMC", ASML: "ASML", V: "Visa", MA: "Mastercard",
+  JPM: "JPMorgan Chase", COST: "Costco", NOW: "ServiceNow", ORCL: "Oracle", CRM: "Salesforce",
+  ADBE: "Adobe", INTC: "Intel", MU: "Micron", UBER: "Uber", SHOP: "Shopify", NET: "Cloudflare",
+  SNOW: "Snowflake", PANW: "Palo Alto Networks", ANET: "Arista Networks", CEG: "Constellation Energy",
+  IBKR: "Interactive Brokers", HOOD: "Robinhood", COIN: "Coinbase", MSTR: "Strategy",
+  NVO: "Novo Nordisk", UNH: "UnitedHealth", WMT: "Walmart", KO: "Coca-Cola", PEP: "PepsiCo",
+};
+const cleanSym = s => String(s || "").replace(/^[A-Z]+:/, "").trim();
+const displaySym = s => cleanSym(s).replace(/-(?=[A-Z]$)/, ".");
+const nameOf = s => NAMES[displaySym(s)] || NAMES[cleanSym(s)] || "";
+const logoUrl = s => `https://financialmodelingprep.com/image-stock/${displaySym(s).replace(".", "-")}.png`;
+const initials = s => {
+  const n = nameOf(s);
+  if (n) { const p = n.split(/\s+/); return (p[0][0] + (p[1]?.[0] || "")).toUpperCase(); }
+  return displaySym(s).slice(0, 2);
+};
 
-const METRICS=[
-  {key:"total",label:"P&L Total", pctKey:"pnlPct"},
-  {key:"1d",   label:"1 Día",     pctKey:"chg1d"},
-  {key:"1w",   label:"1 Semana",  pctKey:"chg1w"},
-  {key:"1m",   label:"1 Mes",     pctKey:"chg1m"},
-  {key:"ytd",  label:"YTD",       pctKey:"chgYtd"},
+/* ─────────────────────────  Formato  ───────────────────────── */
+const fmtPct = v => `${(v || 0) >= 0 ? "+" : ""}${(v || 0).toFixed(2)}%`;
+const fmtUSD = v => `$${Math.abs(v || 0).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const fmtK = v => { const a = Math.abs(v || 0), s = (v || 0) >= 0 ? "+" : "-"; return `${s}$${a.toLocaleString("en", { maximumFractionDigits: 0 })}`; };
+const pnlCol = v => (v || 0) >= 0 ? "#8FE28F" : "#F7A6A9";
+
+const METRICS = [
+  { key: "1d",    label: "Hoy",       pctKey: "chg1d",  adj: "diaria" },
+  { key: "1w",    label: "1 semana",  pctKey: "chg1w",  adj: "semanal" },
+  { key: "1m",    label: "1 mes",     pctKey: "chg1m",  adj: "mensual" },
+  { key: "ytd",   label: "YTD",       pctKey: "chgYtd", adj: "del año" },
+  { key: "total", label: "P&L total", pctKey: "pnlPct", adj: "total" },
 ];
 
-export default function App() {
-  const [holdings,setHoldings]=useState([]);
-  const [loading,setLoading]=useState(true);
-  const [lastUpdated,setLastUpdated]=useState(null);
-  const [error,setError]=useState(null);
-  const [tooltip,setTooltip]=useState(null);
-  const [metric,setMetric]=useState("total");
-  const [dispMode,setDispMode]=useState("pct");
-  const [sz,setSz]=useState({w:800,h:600});
-  const mapRef=useRef(null);
-  const timerRef=useRef(null);
+const C = {
+  bg: "#131314", card: "#1E1F20", text: "#E3E3E3", dim: "#C4C7C5", faint: "#8E918F",
+  line: "#444746", chipOn: "#004A77", chipOnTxt: "#C2E7FF", accent: "#A8C7FA",
+};
+const GAP = 8;
 
-  useEffect(()=>{
-    const obs=new ResizeObserver(entries=>{
-      for (const e of entries) setSz({w:Math.floor(e.contentRect.width),h:Math.floor(e.contentRect.height)});
+/* ─────────────────────────  App  ───────────────────────── */
+export default function App() {
+  const [holdings, setHoldings] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [error, setError] = useState(null);
+  const [detail, setDetail] = useState(null);
+  const [metric, setMetric] = useState("1d");
+  const [dispMode, setDispMode] = useState("pct");
+  const [sz, setSz] = useState({ w: 360, h: 500 });
+  const mapRef = useRef(null);
+  const timerRef = useRef(null);
+
+  useEffect(() => {
+    const obs = new ResizeObserver(entries => {
+      for (const e of entries) { const w = Math.floor(e.contentRect.width); setSz({ w, h: Math.round(w * 1.45) }); }
     });
     if (mapRef.current) obs.observe(mapRef.current);
-    return ()=>obs.disconnect();
-  },[]);
+    return () => obs.disconnect();
+  }, []);
 
-  const fetchData=useCallback(async()=>{
+  const fetchData = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const res=await fetch("/api/quotes");
+      const res = await fetch("/api/quotes");
       if (!res.ok) throw new Error(`Error ${res.status}`);
-      const data=await res.json();
+      const data = await res.json();
       if (data.error) throw new Error(data.error);
-      setHoldings(data.holdings||[]);
+      setHoldings(data.holdings || []);
       setLastUpdated(new Date());
-    } catch(e){ setError(e.message); }
-    finally{ setLoading(false); }
-  },[]);
+    } catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+  }, []);
 
-  useEffect(()=>{
+  useEffect(() => {
     fetchData();
-    timerRef.current=setInterval(fetchData,120000);
-    return ()=>clearInterval(timerRef.current);
-  },[fetchData]);
+    timerRef.current = setInterval(fetchData, 120000);
+    return () => clearInterval(timerRef.current);
+  }, [fetchData]);
 
-  const items=holdings.filter(h=>h.value>0).map(h=>{
-    const cost=h.shares*h.avgCost;
-    const pnl=h.value-cost;
-    const pnlPct=cost>0?((h.price-h.avgCost)/h.avgCost)*100:0;
-    return {...h,cost,pnl,pnlPct};
-  }).sort((a,b)=>b.value-a.value);
+  const items = holdings.filter(h => h.value > 0).map(h => {
+    const cost = h.shares * h.avgCost;
+    const pnl = h.value - cost;
+    const pnlPct = cost > 0 ? ((h.price - h.avgCost) / h.avgCost) * 100 : 0;
+    return { ...h, cost, pnl, pnlPct };
+  }).sort((a, b) => b.value - a.value);
 
-  const totalValue=items.reduce((s,i)=>s+i.value,0);
-  const totalCost=items.reduce((s,i)=>s+i.cost,0);
-  const totalPnL=totalValue-totalCost;
-  const totalPnLPct=totalCost>0?(totalPnL/totalCost)*100:0;
+  const totalValue = items.reduce((s, i) => s + i.value, 0);
+  const totalCost = items.reduce((s, i) => s + i.cost, 0);
+  const totalPnL = totalValue - totalCost;
+  const totalPnLPct = totalCost > 0 ? (totalPnL / totalCost) * 100 : 0;
 
-  // Calculate P&L for current metric to show in header
-  const metricPnlData = (() => {
-    if (metric === "total") {
-      return { usd: totalPnL, pct: totalPnLPct, label: "P&L TOTAL" };
-    }
-    const pctKey = METRICS.find(m=>m.key===metric)?.pctKey;
-    const label = METRICS.find(m=>m.key===metric)?.label;
-    if (!pctKey) return null;
-    // Weighted average pct across all items that have data
-    const itemsWithData = items.filter(i => i[pctKey] != null);
-    if (!itemsWithData.length) return null;
-    const totalWithData = itemsWithData.reduce((s,i)=>s+i.value,0);
-    const wavgPct = itemsWithData.reduce((s,i)=>s+(i[pctKey]*i.value),0) / totalWithData;
-    const totalUsd = itemsWithData.reduce((s,i)=>s+(i[pctKey]/100*i.value),0);
-    return { usd: totalUsd, pct: wavgPct, label: `P&L ${label.toUpperCase()}` };
-  })();
-
-  const cur=METRICS.find(m=>m.key===metric);
-  const getCellPct=c=>c[cur.pctKey]??null;
-  // Fall back to pnlPct for color when metric has no data — never show black map
-  const getCellColor=c=>{ const pct=getCellPct(c); return getColor(pct!==null?pct:c.pnlPct); };
-  const getCellDisp=c=>{
-    const pct=getCellPct(c);
-    if (pct===null) return "—";
-    return dispMode==="pct"?fmtPct(pct):fmtK((pct/100)*c.value);
+  const cur = METRICS.find(m => m.key === metric);
+  const pctOf = c => c[cur.pctKey] ?? null;
+  const colorOf = makeColorScale(items.map(pctOf).filter(v => v != null), metric);
+  const dispOf = c => {
+    const p = pctOf(c);
+    if (p == null) return "—";
+    return dispMode === "pct" ? fmtPct(p) : fmtK((p / 100) * c.value);
   };
 
-  const layout=buildTreemap(items,sz.w,sz.h);
+  // Calcula el treemap con margen extra para que el gap exterior quede alineado al borde
+  const cells = buildTreemap(items, sz.w + GAP, sz.h + GAP).map(c => ({
+    ...c,
+    x: c.x, y: c.y,
+    w: Math.max(0, c.w - GAP), h: Math.max(0, c.h - GAP),
+  }));
 
-  // Finviz UI palette
-  const BG="#0d0d0d", HDR="#161616", BRD="#2a2a2a", TXT="#ffffff", DIM="#888888";
+  // "Performance Temperature"
+  const withData = items.filter(i => pctOf(i) != null);
+  const wVal = withData.reduce((s, i) => s + i.value, 0);
+  const avg = wVal ? withData.reduce((s, i) => s + i.value * pctOf(i), 0) / wVal : null;
+  const ups = withData.filter(i => pctOf(i) > 0).length;
+  const downs = withData.filter(i => pctOf(i) < 0).length;
+  const best = [...withData].sort((a, b) => pctOf(b) - pctOf(a))[0];
+  const worst = [...withData].sort((a, b) => pctOf(a) - pctOf(b))[0];
+  const mood = avg == null ? "" : (ups && downs)
+    ? `mixta con una tendencia ligeramente ${avg >= 0 ? "positiva" : "negativa"}`
+    : avg >= 0 ? "positiva" : "negativa";
 
   return (
-    <div style={{height:"100dvh",background:BG,fontFamily:"Arial,Helvetica,sans-serif",color:TXT,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-      <style>{`
-        *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-        body{overscroll-behavior:none}
-        @keyframes spin{to{transform:rotate(360deg)}}
-        @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.2}}
-        .btn{background:#222;border:1px solid #444;color:#ccc;font-size:11px;font-weight:700;cursor:pointer;padding:4px 10px;border-radius:3px;font-family:Arial,sans-serif;white-space:nowrap}
-        .btn:hover{background:#333;color:#fff}
-        .pill{background:#1a1a1a;border:1px solid #333;color:#aaa;font-size:11px;font-weight:700;cursor:pointer;padding:4px 11px;border-radius:3px;font-family:Arial,sans-serif;white-space:nowrap;flex-shrink:0}
-        .pill:hover{background:#2a2a2a;color:#fff}
-        .pill.on{background:#1a3a6a;border-color:#4a8aff;color:#ffffff}
-        .tog{background:#1a1a1a;border:none;color:#888;font-size:12px;font-weight:700;cursor:pointer;padding:4px 13px;font-family:Arial,sans-serif}
-        .tog:hover{color:#fff}
-        .tog.on{background:#1a3a6a;color:#ffffff}
-        button:active{opacity:0.7}
-        ::-webkit-scrollbar{display:none}
-      `}</style>
+    <div className="app">
+      <style>{CSS}</style>
 
-      {/* Header */}
-      <div style={{padding:"8px 12px",borderBottom:`1px solid ${BRD}`,display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0,background:HDR}}>
-        <span style={{fontSize:15,fontWeight:900,color:TXT,letterSpacing:"0.06em"}}>
-          PORTFOLIO <span style={{color:"#4a8aff"}}>MAP</span>
-        </span>
-        <div style={{display:"flex",gap:6,alignItems:"center"}}>
-          {loading && <div style={{width:7,height:7,borderRadius:"50%",background:"#4a8aff",animation:"pulse 1s infinite"}}/>}
-          <button className="btn" onClick={fetchData}>↻ Refrescar</button>
-          <a href="https://docs.google.com/spreadsheets/d/1k1wbKI5hTN88ibWJ_wm0sWnG-wWvvkiAxs6jHlYuJgo" target="_blank" rel="noreferrer" style={{textDecoration:"none"}}>
-            <button className="btn">⊞ Sheets</button>
+      {/* Top bar estilo Google Finance */}
+      <header className="top">
+        <div className="brand"><b>Portfolio</b> <span>Map</span></div>
+        <div className="actions">
+          <button className={`icon${loading ? " spin" : ""}`} onClick={fetchData} aria-label="Refrescar">
+            <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+          </button>
+          <a className="icon" href="https://docs.google.com/spreadsheets/d/1k1wbKI5hTN88ibWJ_wm0sWnG-wWvvkiAxs6jHlYuJgo" target="_blank" rel="noreferrer" aria-label="Google Sheets">
+            <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M4 4h4v4H4zm6 0h4v4h-4zm6 0h4v4h-4zM4 10h4v4H4zm6 0h4v4h-4zm6 0h4v4h-4zM4 16h4v4H4zm6 0h4v4h-4zm6 0h4v4h-4z"/></svg>
           </a>
+          <div className="avatar">S</div>
         </div>
-      </div>
+      </header>
 
-      {/* Stats bar */}
-      {items.length>0 && (
-        <div style={{padding:"6px 12px",borderBottom:`1px solid ${BRD}`,display:"flex",alignItems:"center",flexShrink:0,background:HDR,overflowX:"auto",gap:0}}>
-          <SB label="VALOR TOTAL" value={fmtUSD(totalValue)}/>
-          <div style={{width:1,background:BRD,margin:"0 14px",alignSelf:"stretch"}}/>
-          <SB
-            label={metricPnlData?.label || "P&L TOTAL"}
-            value={metricPnlData ? `${metricPnlData.usd>=0?"+":"-"}${fmtUSD(metricPnlData.usd)}` : `${totalPnL>=0?"+":"-"}${fmtUSD(totalPnL)}`}
-            sub={metricPnlData ? fmtPct(metricPnlData.pct) : fmtPct(totalPnLPct)}
-            color={pnlCol(metricPnlData?.pct ?? totalPnLPct)}/>
-          <div style={{width:1,background:BRD,margin:"0 14px",alignSelf:"stretch"}}/>
-          <SB label="POSICIONES" value={String(items.length)}/>
-          {lastUpdated && <span style={{marginLeft:"auto",fontSize:9,color:DIM,flexShrink:0}}>{lastUpdated.toLocaleTimeString("es",{hour:"2-digit",minute:"2-digit"})}</span>}
+      {/* Resumen */}
+      {items.length > 0 && (
+        <div className="summary">
+          <div className="total">{fmtUSD(totalValue)}</div>
+          <div className="pnl" style={{ color: pnlCol(totalPnL) }}>
+            {totalPnL >= 0 ? "▲" : "▼"} {totalPnL >= 0 ? "+" : "-"}{fmtUSD(totalPnL)} ({fmtPct(totalPnLPct)})
+            <span className="muted"> · {items.length} posiciones{lastUpdated ? ` · ${lastUpdated.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })}` : ""}</span>
+          </div>
         </div>
       )}
 
-      {/* Controls */}
-      {items.length>0 && (
-        <div style={{padding:"5px 10px",borderBottom:`1px solid ${BRD}`,display:"flex",gap:4,alignItems:"center",flexShrink:0,background:HDR}}>
-          <div style={{display:"flex",gap:3,flex:1,overflowX:"auto"}}>
-            {METRICS.map(m=>(
-              <button key={m.key} className={`pill${metric===m.key?" on":""}`} onClick={()=>setMetric(m.key)}>
-                {m.label}
+      {/* Chips */}
+      {items.length > 0 && (
+        <div className="chips">
+          <div className="chiprow">
+            {METRICS.map(m => (
+              <button key={m.key} className={`chip${metric === m.key ? " on" : ""}`} onClick={() => setMetric(m.key)}>
+                {metric === m.key && <span className="check">✓</span>}{m.label}
               </button>
             ))}
           </div>
-          <div style={{display:"flex",border:`1px solid ${BRD}`,borderRadius:3,overflow:"hidden",flexShrink:0,marginLeft:8}}>
-            <button className={`tog${dispMode==="pct"?" on":""}`} onClick={()=>setDispMode("pct")}>%</button>
-            <button className={`tog${dispMode==="usd"?" on":""}`} onClick={()=>setDispMode("usd")}>$</button>
+          <div className="seg">
+            <button className={dispMode === "pct" ? "on" : ""} onClick={() => setDispMode("pct")}>%</button>
+            <button className={dispMode === "usd" ? "on" : ""} onClick={() => setDispMode("usd")}>$</button>
           </div>
         </div>
       )}
 
-      {error && <div style={{padding:"5px 12px",background:"#2a0000",borderBottom:"1px solid #550000",fontSize:10,color:"#ff6666",flexShrink:0}}>⚠ {error}</div>}
+      {error && <div className="err">⚠ {error}</div>}
 
-      {/* Treemap */}
-      <div ref={mapRef} style={{flex:1,position:"relative",overflow:"hidden",background:BG}}>
-        {loading && items.length===0 ? (
-          <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
-            <div style={{width:36,height:36,border:"2px solid #333",borderTop:"2px solid #4a8aff",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>
-            <div style={{fontSize:11,color:DIM,marginTop:14,letterSpacing:"0.15em"}}>CARGANDO...</div>
-          </div>
-        ):(
-          <svg style={{position:"absolute",inset:0,display:"block"}} width={sz.w} height={sz.h}>
-            {layout.map(cell=>{
-              const pct=getCellPct(cell);
-              const bg=getCellColor(cell);
-              const disp=getCellDisp(cell);
-              const noData=pct===null;
-              const cw=Math.max(0,cell.w-GAP*2), ch=Math.max(0,cell.h-GAP*2);
-              const cx=cell.x+GAP, cy=cell.y+GAP;
+      {/* Tarjeta del heatmap */}
+      <section className="card">
+        <h2>Sus inversiones visualizadas</h2>
+        <p className="sub">El tamaño del cuadro representa el peso proporcional del recurso en tu cartera. El color indica el rendimiento {cur.key === "1d" ? "de hoy" : cur.key === "total" ? "total desde la compra" : `(${cur.label})`}.</p>
 
-              // Font size proportional to cell area — bigger weight = bigger text
-              const area=cw*ch;
-              const fs   =Math.min(30,Math.max(11,Math.sqrt(area)/8.5));
-              const subFs=Math.min(20,Math.max(9, Math.sqrt(area)/11));
-              const wgtFs=Math.min(12,Math.max(7, Math.sqrt(area)/17));
-
-              const showTicker=cw>24&&ch>14;
-              const showVal   =ch>30&&cw>28;
-              const showWgt   =ch>58&&cw>58;
-
-              const lineH=subFs+6;
-              const nLines=showVal?(showWgt?3:2):1;
-              const blockH=fs+(nLines-1)*lineH;
-              const midX=cx+cw/2, midY=cy+ch/2;
-              const topY=midY-blockH/2+fs*0.75;
-
-              return (
-                <g key={cell.symbol} style={{cursor:"pointer"}} onClick={()=>setTooltip(t=>t?.symbol===cell.symbol?null:cell)}>
-                  <rect x={cx} y={cy} width={cw} height={ch} fill={bg} rx={1}/>
-                  {/* Subtle top gloss like Finviz */}
-                  <rect x={cx} y={cy} width={cw} height={Math.min(ch*0.35,16)} fill="white" opacity={0.06} rx={1}/>
-                  {showTicker&&(
-                    <text x={midX} y={showVal?topY:midY+fs*0.35}
-                      textAnchor="middle" fill="#ffffff"
-                      fontSize={fs} fontFamily="Arial,sans-serif" fontWeight="900"
-                      style={{userSelect:"none",textShadow:"0 1px 4px rgba(0,0,0,0.8)"}}>
-                      {cell.symbol}
-                    </text>
-                  )}
-                  {showVal&&(
-                    <text x={midX} y={topY+lineH}
-                      textAnchor="middle"
-                      fill={noData?"#555":"#ffffff"}
-                      fontSize={subFs} fontFamily="Arial,sans-serif" fontWeight="700"
-                      style={{userSelect:"none"}}>
-                      {disp}
-                    </text>
-                  )}
-                  {showWgt&&(
-                    <text x={midX} y={topY+lineH*2}
-                      textAnchor="middle" fill="rgba(255,255,255,0.5)"
-                      fontSize={wgtFs} fontFamily="Arial,sans-serif"
-                      style={{userSelect:"none"}}>
-                      {dispMode==="usd" ? fmtUSD(cell.value) : (cell.value/totalValue*100).toFixed(1)+"%"}
-                    </text>
-                  )}
-                </g>
-              );
-            })}
-          </svg>
-        )}
-
-
-      </div>
-
-      {/* Detail panel */}
-      {tooltip&&(()=>{
-        const pnl=tooltip.pnl??(tooltip.value-tooltip.shares*tooltip.avgCost);
-        const pnlPct=tooltip.pnlPct??(tooltip.avgCost>0?((tooltip.price-tooltip.avgCost)/tooltip.avgCost)*100:0);
-        const wt=totalValue>0?(tooltip.value/totalValue*100).toFixed(2):"0";
-        return (
-          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",display:"flex",alignItems:"flex-end",zIndex:100}} onClick={()=>setTooltip(null)}>
-            <div style={{width:"100%",background:"#111",borderTop:"1px solid #333",padding:"20px 18px 38px",borderRadius:"16px 16px 0 0"}} onClick={e=>e.stopPropagation()}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
-                <div>
-                  <div style={{fontSize:28,fontWeight:900,color:"#fff"}}>{tooltip.symbol}</div>
-                  <div style={{fontSize:11,color:"#666",marginTop:3}}>{wt}% del portfolio · {tooltip.shares} acciones</div>
-                </div>
-                <button style={{background:"transparent",border:"1px solid #333",color:"#666",width:30,height:30,cursor:"pointer",fontSize:14,borderRadius:3}} onClick={()=>setTooltip(null)}>✕</button>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:0}}>
-                {[
-                  ["PRECIO ACTUAL", fmtUSD(tooltip.price),                           null],
-                  ["PRECIO MEDIO",  fmtUSD(tooltip.avgCost),                         null],
-                  ["VALOR ACTUAL",  fmtUSD(tooltip.value),                           null],
-                  ["COSTE TOTAL",   fmtUSD(tooltip.shares*tooltip.avgCost),          null],
-                  ["P&L ($)",       `${pnl>=0?"+":"-"}${fmtUSD(pnl)}`,             pnlCol(pnl)],
-                  ["P&L (%)",       fmtPct(pnlPct),                                 pnlCol(pnlPct)],
-                ].map(([l,v,c])=>(
-                  <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 0",borderBottom:"1px solid #222"}}>
-                    <span style={{fontSize:10,color:"#666",letterSpacing:"0.1em"}}>{l}</span>
-                    <span style={{fontSize:15,color:c||"#fff",fontWeight:700}}>{v}</span>
+        <div ref={mapRef} className="map" style={{ height: sz.h }}>
+          {loading && items.length === 0 ? (
+            <div className="loading"><div className="spinner" /></div>
+          ) : cells.map(cell => {
+            const p = pctOf(cell);
+            const { w, h } = cell;
+            const tiny = w < 46 || h < 40;
+            const small = !tiny && (w < 96 || h < 74);
+            const showName = !small && !tiny && w >= 130 && h >= 110 && nameOf(cell.symbol);
+            const logoTop = !small && !tiny && w >= 150 && h >= 90;
+            const logoBottom = !logoTop && !small && !tiny && h >= 150 && w >= 80;
+            const showDot = !tiny && w >= 112;
+            const r = Math.min(18, w / 4, h / 4);
+            return (
+              <button key={cell.symbol} className="tile"
+                style={{ left: cell.x, top: cell.y, width: w, height: h, background: colorOf(p), borderRadius: r }}
+                onClick={() => setDetail(cell)}>
+                {!tiny && (
+                  <div className={`tinfo${small ? " sm" : ""}`} style={{ paddingRight: logoTop ? 60 : undefined }}>
+                    <div className="tk">{displaySym(cell.symbol)}</div>
+                    {showName && <div className="nm">{nameOf(cell.symbol)}</div>}
+                    <div className="pc">
+                      <span>{dispOf(cell)}</span>
+                      {showDot && p != null && <i className="dot" style={{ background: p >= 0 ? PAL.dotUp : PAL.dotDown }} />}
+                    </div>
                   </div>
-                ))}
+                )}
+                {tiny && w >= 28 && h >= 18 && <div className="tk xs">{displaySym(cell.symbol)}</div>}
+                {(logoTop || logoBottom) && <Logo sym={cell.symbol} pos={logoTop ? "top" : "bottom"} />}
+              </button>
+            );
+          })}
+        </div>
+
+        {avg != null && (
+          <p className="temp">
+            <b>Performance Temperature:</b> La temperatura {cur.adj} de su cartera es {mood} ({fmtPct(avg)} ponderado),
+            con {ups} {ups === 1 ? "valor" : "valores"} al alza y {downs} a la baja
+            {best && pctOf(best) > 0 ? <>, impulsada principalmente por <b>{displaySym(best.symbol)}</b> ({fmtPct(pctOf(best))})</> : null}
+            {worst && pctOf(worst) < 0 ? <>; el mayor lastre es <b>{displaySym(worst.symbol)}</b> ({fmtPct(pctOf(worst))})</> : null}.
+          </p>
+        )}
+      </section>
+
+      {/* Detalle (bottom sheet Material) */}
+      {detail && (() => {
+        const d = detail;
+        const wt = totalValue > 0 ? (d.value / totalValue * 100).toFixed(2) : "0";
+        const rows = [
+          ["Precio actual", fmtUSD(d.price)],
+          ["Precio medio", fmtUSD(d.avgCost)],
+          ["Valor actual", fmtUSD(d.value)],
+          ["Coste total", fmtUSD(d.cost)],
+          ["P&L ($)", `${d.pnl >= 0 ? "+" : "-"}${fmtUSD(d.pnl)}`, pnlCol(d.pnl)],
+          ["P&L (%)", fmtPct(d.pnlPct), pnlCol(d.pnlPct)],
+          ["Hoy", d.chg1d != null ? fmtPct(d.chg1d) : "—", d.chg1d != null ? pnlCol(d.chg1d) : null],
+          ["1 semana", d.chg1w != null ? fmtPct(d.chg1w) : "—", d.chg1w != null ? pnlCol(d.chg1w) : null],
+          ["1 mes", d.chg1m != null ? fmtPct(d.chg1m) : "—", d.chg1m != null ? pnlCol(d.chg1m) : null],
+          ["YTD", d.chgYtd != null ? fmtPct(d.chgYtd) : "—", d.chgYtd != null ? pnlCol(d.chgYtd) : null],
+        ];
+        return (
+          <div className="scrim" onClick={() => setDetail(null)}>
+            <div className="sheet" onClick={e => e.stopPropagation()}>
+              <div className="grab" />
+              <div className="shead">
+                <Logo sym={d.symbol} pos="inline" />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="stk">{displaySym(d.symbol)}</div>
+                  <div className="snm">{nameOf(d.symbol) || "—"} · {wt}% de la cartera · {d.shares} acciones</div>
+                </div>
+                <button className="icon" onClick={() => setDetail(null)} aria-label="Cerrar">✕</button>
               </div>
-              <div style={{marginTop:14,fontSize:9,color:"#333",textAlign:"center"}}>Google Sheets · GOOGLEFINANCE() · {lastUpdated?.toLocaleTimeString("es")}</div>
+              {rows.map(([l, v, c]) => (
+                <div key={l} className="srow"><span>{l}</span><b style={{ color: c || C.text }}>{v}</b></div>
+              ))}
+              <div className="foot">Google Sheets · GOOGLEFINANCE() · {lastUpdated?.toLocaleTimeString("es")}</div>
             </div>
           </div>
         );
@@ -333,13 +326,83 @@ export default function App() {
   );
 }
 
-function SB({label,value,sub,color}) {
+function Logo({ sym, pos }) {
+  const [failed, setFailed] = useState(false);
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:2,paddingRight:14,flexShrink:0}}>
-      <span style={{fontSize:9,color:"#666",letterSpacing:"0.1em"}}>{label}</span>
-      <span style={{fontSize:13,color:color||"#fff",fontWeight:700}}>
-        {value}{sub&&<span style={{fontSize:11,marginLeft:5,color}}>{sub}</span>}
-      </span>
+    <div className={`logo ${pos}`}>
+      {failed
+        ? <span className="ini">{initials(sym)}</span>
+        : <img src={logoUrl(sym)} alt="" onError={() => setFailed(true)} />}
     </div>
   );
 }
+
+const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,400;6..144,500;6..144,700&family=Roboto:wght@400;500;700&display=swap');
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{background:${C.bg};overscroll-behavior:none}
+.app{height:100dvh;display:flex;flex-direction:column;overflow-y:auto;-webkit-overflow-scrolling:touch;background:${C.bg};color:${C.text};
+  font-family:'Google Sans Flex','Google Sans','Roboto',-apple-system,BlinkMacSystemFont,sans-serif;
+  padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+button{font-family:inherit;color:inherit;border:none;background:none;cursor:pointer}
+.top{display:flex;align-items:center;justify-content:space-between;padding:12px 16px 8px;flex-shrink:0}
+.brand{font-size:23px;letter-spacing:-0.2px}
+.brand b{font-weight:500;color:#fff}.brand span{color:${C.dim};font-weight:400}
+.actions{display:flex;align-items:center;gap:6px}
+.icon{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;color:${C.dim};text-decoration:none;font-size:16px}
+.icon:active{background:rgba(255,255,255,.08)}
+.icon.spin svg{animation:spin 0.9s linear infinite}
+.avatar{width:36px;height:36px;border-radius:50%;background:#7E57C2;color:#fff;display:grid;place-items:center;font-weight:500;font-size:16px;margin-left:4px}
+.summary{padding:2px 20px 10px;flex-shrink:0}
+.total{font-size:30px;font-weight:400;color:#fff;letter-spacing:-0.3px}
+.pnl{font-size:14px;margin-top:2px;font-weight:500}
+.muted{color:${C.faint};font-weight:400}
+.chips{display:flex;align-items:center;gap:8px;padding:0 16px 12px;flex-shrink:0}
+.chiprow{display:flex;gap:8px;overflow-x:auto;flex:1;scrollbar-width:none}
+.chiprow::-webkit-scrollbar{display:none}
+.chip{flex-shrink:0;height:32px;padding:0 14px;border-radius:8px;border:1px solid ${C.line};color:${C.dim};font-size:14px;font-weight:500;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.chip.on{background:${C.chipOn};border-color:${C.chipOn};color:${C.chipOnTxt}}
+.check{font-size:13px}
+.seg{display:flex;border:1px solid ${C.line};border-radius:16px;overflow:hidden;flex-shrink:0}
+.seg button{height:30px;width:36px;font-size:14px;font-weight:500;color:${C.dim}}
+.seg button.on{background:${C.chipOn};color:${C.chipOnTxt}}
+.err{margin:0 16px 10px;padding:8px 12px;border-radius:12px;background:#601410;color:#F9DEDC;font-size:13px;flex-shrink:0}
+.card{flex-shrink:0;margin:0 12px 16px;background:${C.card};border-radius:24px;padding:18px 16px 14px;display:flex;flex-direction:column}
+.card h2{font-size:22px;font-weight:400;color:#E8EAED;letter-spacing:-0.1px}
+.sub{font-size:13.5px;line-height:1.4;color:${C.dim};margin:6px 0 14px}
+.map{position:relative;flex-shrink:0}
+.tile{position:absolute;overflow:hidden;text-align:left;color:#F1F3F4;transition:filter .15s}
+.tile:active{filter:brightness(1.12)}
+.tinfo{position:absolute;inset:0;padding:14px 16px}
+.tinfo.sm{padding:8px 9px}
+.tk{font-size:17px;font-weight:500;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tinfo.sm .tk{font-size:13px}
+.tk.xs{font-size:10.5px;padding:4px 5px;opacity:.9}
+.nm{font-size:15px;color:rgba(255,255,255,.72);margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pc{display:flex;align-items:center;gap:9px;margin-top:8px;font-size:17px;font-weight:500;white-space:nowrap}
+.tinfo.sm .pc{font-size:12px;margin-top:3px}
+.dot{width:16px;height:16px;border-radius:50%;display:inline-block;flex-shrink:0}
+.logo{width:40px;height:40px;border-radius:11px;background:rgba(0,0,0,.28);display:grid;place-items:center;overflow:hidden;flex-shrink:0}
+.logo.top{position:absolute;top:10px;right:10px}
+.logo.bottom{position:absolute;left:16px;bottom:14px}
+.logo.inline{width:48px;height:48px;border-radius:13px;background:#2D2F31}
+.logo img{width:24px;height:24px;object-fit:contain}
+.logo.inline img{width:30px;height:30px}
+.ini{font-family:Georgia,'Times New Roman',serif;font-weight:700;font-size:15px;color:#fff}
+.temp{font-size:15px;line-height:1.5;color:${C.dim};margin-top:14px;flex-shrink:0}
+.temp b{color:#fff;font-weight:500}
+.loading{position:absolute;inset:0;display:grid;place-items:center}
+.spinner{width:36px;height:36px;border-radius:50%;border:3px solid #333;border-top-color:${C.accent};animation:spin .8s linear infinite}
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;z-index:100;animation:fade .15s}
+.sheet{width:100%;background:${C.card};border-radius:28px 28px 0 0;padding:10px 20px calc(24px + env(safe-area-inset-bottom));max-height:85dvh;overflow-y:auto;animation:up .2s ease-out}
+.grab{width:32px;height:4px;border-radius:2px;background:${C.line};margin:0 auto 16px}
+.shead{display:flex;align-items:center;gap:14px;margin-bottom:12px}
+.stk{font-size:24px;font-weight:500;color:#fff}
+.snm{font-size:13px;color:${C.faint};margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.srow{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid #2D2F31;font-size:15px}
+.srow span{color:${C.dim}}.srow b{font-weight:500}
+.foot{margin-top:14px;font-size:11px;color:${C.faint};text-align:center}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fade{from{opacity:0}}
+@keyframes up{from{transform:translateY(40px);opacity:.4}}
+`;
