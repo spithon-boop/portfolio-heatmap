@@ -124,44 +124,16 @@ export default function App() {
   const [currency, setCurrency] = useState("EUR"); // EUR | USD
   const [hidden, setHidden] = useState(false);
   const [sz, setSz] = useState({ w: 360, h: 500 });
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const wrapperRef = useRef(null); // div que envuelve header+summary+chips
   const mapRef = useRef(null);
   const timerRef = useRef(null);
 
-  // Medir ancho del mapa
   useEffect(() => {
     const obs = new ResizeObserver(entries => {
-      for (const e of entries) {
-        if (!isFullscreen) {
-          const w = Math.floor(e.contentRect.width);
-          setSz({ w, h: Math.round(w * 1.45) });
-        }
-      }
+      for (const e of entries) { const w = Math.floor(e.contentRect.width); setSz({ w, h: Math.round(w * 1.45) }); }
     });
     if (mapRef.current) obs.observe(mapRef.current);
     return () => obs.disconnect();
-  }, [isFullscreen]);
-
-  // Detectar scroll: cuando el wrapper sale por arriba → fullscreen
-  useEffect(() => {
-    const onScroll = () => {
-      const wrapper = wrapperRef.current;
-      if (!wrapper) return;
-      const rect = wrapper.getBoundingClientRect();
-      // wrapper ha salido completamente por arriba
-      if (rect.bottom <= 0) {
-        setIsFullscreen(true);
-      } else {
-        setIsFullscreen(false);
-      }
-    };
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
   }, []);
-
-  const mapH = isFullscreen ? window.innerHeight : sz.h;
-  const mapW = isFullscreen ? window.innerWidth : sz.w;
 
   const fetchData = useCallback(async (cur) => {
     const activeCur = cur || currency;
@@ -211,21 +183,10 @@ export default function App() {
     return dispMode === "pct" ? fmtPct(p) : fmtK((p / 100) * c.value, currency);
   };
 
-  // Cuando sticky: el mapa ocupa toda la pantalla menos safe areas
-  const cells = buildTreemap(items, mapW + GAP, mapH + GAP).map(c => ({
+  const cells = buildTreemap(items, sz.w + GAP, sz.h + GAP).map(c => ({
     ...c, x: c.x, y: c.y,
     w: Math.max(0, c.w - GAP), h: Math.max(0, c.h - GAP),
   }));
-
-  // Summary P&L dinámico según métrica seleccionada
-  const summaryPnLPct = (() => {
-    if (metric === "total") return totalPnLPct;
-    const withChg = items.filter(i => pctOf(i) != null);
-    const wVal = withChg.reduce((s, i) => s + i.value, 0);
-    if (!wVal) return 0;
-    return withChg.reduce((s, i) => s + i.value * pctOf(i), 0) / wVal;
-  })();
-  const summaryPnL = (summaryPnLPct / 100) * totalValue;
 
   const withData = items.filter(i => pctOf(i) != null);
   const wVal = withData.reduce((s, i) => s + i.value, 0);
@@ -243,7 +204,7 @@ export default function App() {
   return (
     <div className="app">
       <style>{CSS}</style>
-      <div ref={wrapperRef}>
+
       {/* Top bar */}
       <header className="top">
         <div className="brand"><b>Portfolio</b> <span>Map</span></div>
@@ -275,8 +236,8 @@ export default function App() {
               )}
             </button>
           </div>
-          <div className="pnl" style={{ color: hidden ? C.faint : pnlCol(summaryPnL) }}>
-            {hidden ? "•••••• (••••)" : `${summaryPnL >= 0 ? "▲" : "▼"} ${summaryPnL >= 0 ? "+" : "-"}${fmtMoney(Math.abs(summaryPnL), currency)} (${fmtPct(summaryPnLPct)})`}
+          <div className="pnl" style={{ color: hidden ? C.faint : pnlCol(totalPnL) }}>
+            {hidden ? "•••••• (••••)" : `${totalPnL >= 0 ? "▲" : "▼"} ${totalPnL >= 0 ? "+" : "-"}${fmtMoney(totalPnL, currency)} (${fmtPct(totalPnLPct)})`}
             <span className="muted"> · {items.length} posiciones{lastUpdated ? ` · ${lastUpdated.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })}` : ""}</span>
           </div>
         </div>
@@ -301,28 +262,9 @@ export default function App() {
 
       {error && <div className="err">⚠ {error}</div>}
 
-      </div>{/* fin wrapperRef */}
-
       {/* Heatmap */}
-      <section
-        className="card"
-        style={isFullscreen ? {
-          position: 'sticky',
-          top: 0,
-          margin: 0,
-          borderRadius: 0,
-          padding: 0,
-          zIndex: 10,
-          height: mapH,
-          width: '100%',
-          background: '#131314',
-        } : undefined}
-      >
-        <div
-          ref={mapRef}
-          className="map"
-          style={{ height: mapH, width: isFullscreen ? mapW : undefined }}
-        >
+      <section className="card">
+        <div ref={mapRef} className="map" style={{ height: sz.h }}>
           {loading && items.length === 0 ? (
             <div className="loading"><div className="spinner" /></div>
           ) : cells.map(cell => {
@@ -422,7 +364,7 @@ const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,400;6..144,500;6..144,700&family=Roboto:wght@400;500;700&display=swap');
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{background:${C.bg};overscroll-behavior:none}
-.app{min-height:100dvh;display:flex;flex-direction:column;background:${C.bg};color:${C.text};
+.app{height:100dvh;display:flex;flex-direction:column;overflow-y:auto;-webkit-overflow-scrolling:touch;background:${C.bg};color:${C.text};
   font-family:'Google Sans Flex','Google Sans','Roboto',-apple-system,BlinkMacSystemFont,sans-serif;
   padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
 button{font-family:inherit;color:inherit;border:none;background:none;cursor:pointer}
