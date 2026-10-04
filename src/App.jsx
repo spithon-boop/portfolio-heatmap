@@ -182,7 +182,10 @@ export default function App() {
   const totalPnL   = totalValue - totalCost;
   const totalPnLPct = totalCost > 0 ? (totalPnL / totalCost) * 100 : 0;
 
-  // Variación dinámica según métrica seleccionada
+  const cur = METRICS.find(m => m.key === metric);
+  const pctOf = c => c[cur.pctKey] ?? null;
+
+  // Variación dinámica según métrica seleccionada — después de pctOf
   const summaryPnLPct = (() => {
     if (metric === "total") return totalPnLPct;
     const withChg = items.filter(i => pctOf(i) != null);
@@ -191,9 +194,6 @@ export default function App() {
     return withChg.reduce((s, i) => s + i.value * pctOf(i), 0) / wVal;
   })();
   const summaryPnL = (summaryPnLPct / 100) * totalValue;
-
-  const cur = METRICS.find(m => m.key === metric);
-  const pctOf = c => c[cur.pctKey] ?? null;
   const colorOf = makeColorScale(items.map(pctOf).filter(v => v != null), metric);
   const dispOf = c => {
     if (showValue) return fmtMoney(c.value, currency);
