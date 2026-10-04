@@ -264,9 +264,6 @@ export default function App() {
 
       {/* Heatmap */}
       <section className="card">
-        <h2>Sus inversiones visualizadas</h2>
-        <p className="sub">El tamaño del cuadro representa el peso proporcional del recurso en tu cartera. El color indica el rendimiento {cur.key === "1d" ? "de hoy" : cur.key === "total" ? "total desde la compra" : `(${cur.label})`}.</p>
-
         <div ref={mapRef} className="map" style={{ height: sz.h }}>
           {loading && items.length === 0 ? (
             <div className="loading"><div className="spinner" /></div>
