@@ -124,7 +124,10 @@ export default function App() {
   const [currency, setCurrency] = useState("EUR"); // EUR | USD
   const [hidden, setHidden] = useState(false);
   const [sz, setSz] = useState({ w: 360, h: 500 });
+  const [stickyH, setStickyH] = useState(null); // altura sticky del mapa
   const mapRef = useRef(null);
+  const sectionRef = useRef(null);
+  const appRef = useRef(null);
   const timerRef = useRef(null);
 
   useEffect(() => {
@@ -133,6 +136,27 @@ export default function App() {
     });
     if (mapRef.current) obs.observe(mapRef.current);
     return () => obs.disconnect();
+  }, []);
+
+  // Sticky map: cuando el section llega al top, calculamos altura disponible = 100dvh
+  useEffect(() => {
+    const app = appRef.current;
+    if (!app) return;
+    const handleScroll = () => {
+      const section = sectionRef.current;
+      if (!section) return;
+      const rect = section.getBoundingClientRect();
+      const safeTop = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sat') || '0');
+      if (rect.top <= safeTop + 1) {
+        // El section llegó al top: altura del mapa = viewport - padding del section
+        const available = window.innerHeight - safeTop - 32; // 32 = padding interno del card
+        setStickyH(Math.max(300, available));
+      } else {
+        setStickyH(null);
+      }
+    };
+    app.addEventListener('scroll', handleScroll, { passive: true });
+    return () => app.removeEventListener('scroll', handleScroll);
   }, []);
 
   const fetchData = useCallback(async (cur) => {
@@ -183,10 +207,21 @@ export default function App() {
     return dispMode === "pct" ? fmtPct(p) : fmtK((p / 100) * c.value, currency);
   };
 
-  const cells = buildTreemap(items, sz.w + GAP, sz.h + GAP).map(c => ({
+  const mapH = stickyH ?? sz.h;
+  const cells = buildTreemap(items, sz.w + GAP, mapH + GAP).map(c => ({
     ...c, x: c.x, y: c.y,
     w: Math.max(0, c.w - GAP), h: Math.max(0, c.h - GAP),
   }));
+
+  // Summary P&L dinámico según métrica seleccionada
+  const summaryPnLPct = (() => {
+    if (metric === "total") return totalPnLPct;
+    const withChg = items.filter(i => pctOf(i) != null);
+    const wVal = withChg.reduce((s, i) => s + i.value, 0);
+    if (!wVal) return 0;
+    return withChg.reduce((s, i) => s + i.value * pctOf(i), 0) / wVal;
+  })();
+  const summaryPnL = (summaryPnLPct / 100) * totalValue;
 
   const withData = items.filter(i => pctOf(i) != null);
   const wVal = withData.reduce((s, i) => s + i.value, 0);
@@ -202,7 +237,7 @@ export default function App() {
   const curSym = currency === "EUR" ? "€" : "$";
 
   return (
-    <div className="app">
+    <div className="app" ref={appRef}>
       <style>{CSS}</style>
 
       {/* Top bar */}
@@ -236,8 +271,8 @@ export default function App() {
               )}
             </button>
           </div>
-          <div className="pnl" style={{ color: hidden ? C.faint : pnlCol(totalPnL) }}>
-            {hidden ? "•••••• (••••)" : `${totalPnL >= 0 ? "▲" : "▼"} ${totalPnL >= 0 ? "+" : "-"}${fmtMoney(totalPnL, currency)} (${fmtPct(totalPnLPct)})`}
+          <div className="pnl" style={{ color: hidden ? C.faint : pnlCol(summaryPnL) }}>
+            {hidden ? "•••••• (••••)" : `${summaryPnL >= 0 ? "▲" : "▼"} ${summaryPnL >= 0 ? "+" : "-"}${fmtMoney(Math.abs(summaryPnL), currency)} (${fmtPct(summaryPnLPct)})`}
             <span className="muted"> · {items.length} posiciones{lastUpdated ? ` · ${lastUpdated.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })}` : ""}</span>
           </div>
         </div>
@@ -263,8 +298,21 @@ export default function App() {
       {error && <div className="err">⚠ {error}</div>}
 
       {/* Heatmap */}
-      <section className="card">
-        <div ref={mapRef} className="map" style={{ height: sz.h }}>
+      <section
+        ref={sectionRef}
+        className="card"
+        style={stickyH ? {
+          position: 'sticky',
+          top: 0,
+          margin: 0,
+          borderRadius: 0,
+          padding: '16px 12px',
+          zIndex: 10,
+          height: '100dvh',
+          justifyContent: 'center',
+        } : undefined}
+      >
+        <div ref={mapRef} className="map" style={{ height: mapH }}>
           {loading && items.length === 0 ? (
             <div className="loading"><div className="spinner" /></div>
           ) : cells.map(cell => {
