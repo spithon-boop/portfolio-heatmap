@@ -182,6 +182,16 @@ export default function App() {
   const totalPnL   = totalValue - totalCost;
   const totalPnLPct = totalCost > 0 ? (totalPnL / totalCost) * 100 : 0;
 
+  // Variación dinámica según métrica seleccionada
+  const summaryPnLPct = (() => {
+    if (metric === "total") return totalPnLPct;
+    const withChg = items.filter(i => pctOf(i) != null);
+    const wVal = withChg.reduce((s, i) => s + i.value, 0);
+    if (!wVal) return 0;
+    return withChg.reduce((s, i) => s + i.value * pctOf(i), 0) / wVal;
+  })();
+  const summaryPnL = (summaryPnLPct / 100) * totalValue;
+
   const cur = METRICS.find(m => m.key === metric);
   const pctOf = c => c[cur.pctKey] ?? null;
   const colorOf = makeColorScale(items.map(pctOf).filter(v => v != null), metric);
@@ -252,8 +262,8 @@ export default function App() {
               )}
             </button>
           </div>
-          <div className="pnl" style={{ color: hidden ? C.faint : pnlCol(totalPnL) }}>
-            {hidden ? "•••••• (••••)" : `${totalPnL >= 0 ? "▲" : "▼"} ${totalPnL >= 0 ? "+" : "-"}${fmtMoney(totalPnL, currency)} (${fmtPct(totalPnLPct)})`}
+          <div className="pnl" style={{ color: hidden ? C.faint : pnlCol(summaryPnL) }}>
+            {hidden ? "•••••• (••••)" : `${summaryPnL >= 0 ? "▲" : "▼"} ${summaryPnL >= 0 ? "+" : "-"}${fmtMoney(Math.abs(summaryPnL), currency)} (${fmtPct(summaryPnLPct)})`}
             <span className="muted"> · {items.length} posiciones{lastUpdated ? ` · ${lastUpdated.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })}` : ""}</span>
           </div>
         </div>
