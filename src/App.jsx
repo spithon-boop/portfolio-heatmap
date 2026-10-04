@@ -138,24 +138,22 @@ export default function App() {
     return () => obs.disconnect();
   }, []);
 
-  // Sentinel: un div invisible justo ANTES del section.
-  // Cuando sale del viewport por arriba → el mapa ocupa 100dvh (sticky).
-  // Cuando vuelve → volvemos al tamaño normal.
+  // Sticky: cuando el sentinel (justo antes del mapa) sale por arriba,
+  // el mapa pasa a ocupar 100dvh exacto.
   const sentinelRef = useRef(null);
   useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
     const obs = new IntersectionObserver(
       ([entry]) => {
-        if (!entry.isIntersecting) {
-          // Sentinel salió por arriba: mapa sticky a pantalla completa
-          const available = window.innerHeight - 32;
-          setStickyH(Math.max(300, available));
+        if (entry.boundingClientRect.top < 0) {
+          // salió por arriba
+          setStickyH(window.innerHeight);
         } else {
           setStickyH(null);
         }
       },
-      { threshold: 0, rootMargin: '0px 0px 0px 0px' }
+      { threshold: [0] }
     );
     obs.observe(sentinel);
     return () => obs.disconnect();
@@ -209,8 +207,10 @@ export default function App() {
     return dispMode === "pct" ? fmtPct(p) : fmtK((p / 100) * c.value, currency);
   };
 
-  const mapH = stickyH ?? sz.h;
-  const cells = buildTreemap(items, sz.w + GAP, mapH + GAP).map(c => ({
+  // Cuando sticky: el mapa ocupa toda la pantalla menos safe areas
+  const mapH = stickyH ? stickyH : sz.h;
+  const mapW = stickyH ? (window.innerWidth || sz.w) : sz.w;
+  const cells = buildTreemap(items, mapW + GAP, mapH + GAP).map(c => ({
     ...c, x: c.x, y: c.y,
     w: Math.max(0, c.w - GAP), h: Math.max(0, c.h - GAP),
   }));
@@ -311,13 +311,23 @@ export default function App() {
           top: 0,
           margin: 0,
           borderRadius: 0,
-          padding: '16px 12px',
+          padding: 0,
           zIndex: 10,
-          height: '100dvh',
+          height: stickyH,
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
           justifyContent: 'center',
         } : undefined}
       >
-        <div ref={mapRef} className="map" style={{ height: mapH }}>
+        <div
+          ref={mapRef}
+          className="map"
+          style={{
+            height: mapH,
+            width: stickyH ? mapW : undefined,
+          }}
+        >
           {loading && items.length === 0 ? (
             <div className="loading"><div className="spinner" /></div>
           ) : cells.map(cell => {
