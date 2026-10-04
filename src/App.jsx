@@ -128,8 +128,17 @@ export default function App() {
   const timerRef = useRef(null);
 
   useEffect(() => {
+    const calcH = (w) => {
+      // Altura = viewport completo menos: header(56) + resumen(64) + chips(52) + padding card(32) + safe areas(~16)
+      const aboveMap = 56 + 64 + 52 + 32 + 16;
+      const vh = window.innerHeight;
+      return Math.max(Math.round(w * 1.45), vh - aboveMap);
+    };
     const obs = new ResizeObserver(entries => {
-      for (const e of entries) { const w = Math.floor(e.contentRect.width); setSz({ w, h: Math.round(w * 1.45) }); }
+      for (const e of entries) {
+        const w = Math.floor(e.contentRect.width);
+        setSz({ w, h: calcH(w) });
+      }
     });
     if (mapRef.current) obs.observe(mapRef.current);
     return () => obs.disconnect();
