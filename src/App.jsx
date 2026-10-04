@@ -124,17 +124,21 @@ export default function App() {
   const [currency, setCurrency] = useState("EUR"); // EUR | USD
   const [hidden, setHidden] = useState(false);
   const [sz, setSz] = useState({ w: 360, h: 500 });
-  const [stickyH, setStickyH] = useState(null); // altura sticky del mapa
-  const mapRef = useRef(null);
+  const [stickyH, setStickyH] = useState(null);
+  const containerRef = useRef(null); // mide el ancho disponible
+  const mapRef = useRef(null);       // solo para el div del mapa
   const sectionRef = useRef(null);
   const appRef = useRef(null);
   const timerRef = useRef(null);
 
   useEffect(() => {
     const obs = new ResizeObserver(entries => {
-      for (const e of entries) { const w = Math.floor(e.contentRect.width); setSz({ w, h: Math.round(w * 1.45) }); }
+      for (const e of entries) {
+        const w = Math.floor(e.contentRect.width);
+        setSz({ w, h: Math.round(w * 1.45) });
+      }
     });
-    if (mapRef.current) obs.observe(mapRef.current);
+    if (containerRef.current) obs.observe(containerRef.current);
     return () => obs.disconnect();
   }, []);
 
@@ -315,11 +319,10 @@ export default function App() {
           zIndex: 10,
           height: stickyH,
           width: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
         } : undefined}
       >
+        {/* div invisible solo para medir el ancho — no se mueve con sticky */}
+        <div ref={containerRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }} />
         <div
           ref={mapRef}
           className="map"
