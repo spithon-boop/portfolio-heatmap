@@ -124,44 +124,44 @@ export default function App() {
   const [currency, setCurrency] = useState("EUR"); // EUR | USD
   const [hidden, setHidden] = useState(false);
   const [sz, setSz] = useState({ w: 360, h: 500 });
-  const [stickyH, setStickyH] = useState(null);
-  const containerRef = useRef(null); // mide el ancho disponible
-  const mapRef = useRef(null);       // solo para el div del mapa
-  const sectionRef = useRef(null);
-  const appRef = useRef(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const wrapperRef = useRef(null); // div que envuelve header+summary+chips
+  const mapRef = useRef(null);
   const timerRef = useRef(null);
 
+  // Medir ancho del mapa
   useEffect(() => {
     const obs = new ResizeObserver(entries => {
       for (const e of entries) {
-        const w = Math.floor(e.contentRect.width);
-        setSz({ w, h: Math.round(w * 1.45) });
+        if (!isFullscreen) {
+          const w = Math.floor(e.contentRect.width);
+          setSz({ w, h: Math.round(w * 1.45) });
+        }
       }
     });
-    if (containerRef.current) obs.observe(containerRef.current);
+    if (mapRef.current) obs.observe(mapRef.current);
     return () => obs.disconnect();
+  }, [isFullscreen]);
+
+  // Detectar scroll: cuando el wrapper sale por arriba → fullscreen
+  useEffect(() => {
+    const onScroll = () => {
+      const wrapper = wrapperRef.current;
+      if (!wrapper) return;
+      const rect = wrapper.getBoundingClientRect();
+      // wrapper ha salido completamente por arriba
+      if (rect.bottom <= 0) {
+        setIsFullscreen(true);
+      } else {
+        setIsFullscreen(false);
+      }
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  // Sticky: cuando el sentinel (justo antes del mapa) sale por arriba,
-  // el mapa pasa a ocupar 100dvh exacto.
-  const sentinelRef = useRef(null);
-  useEffect(() => {
-    const sentinel = sentinelRef.current;
-    if (!sentinel) return;
-    const obs = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.boundingClientRect.top < 0) {
-          // salió por arriba
-          setStickyH(window.innerHeight);
-        } else {
-          setStickyH(null);
-        }
-      },
-      { threshold: [0] }
-    );
-    obs.observe(sentinel);
-    return () => obs.disconnect();
-  }, []);
+  const mapH = isFullscreen ? window.innerHeight : sz.h;
+  const mapW = isFullscreen ? window.innerWidth : sz.w;
 
   const fetchData = useCallback(async (cur) => {
     const activeCur = cur || currency;
@@ -212,8 +212,6 @@ export default function App() {
   };
 
   // Cuando sticky: el mapa ocupa toda la pantalla menos safe areas
-  const mapH = stickyH ? stickyH : sz.h;
-  const mapW = stickyH ? (window.innerWidth || sz.w) : sz.w;
   const cells = buildTreemap(items, mapW + GAP, mapH + GAP).map(c => ({
     ...c, x: c.x, y: c.y,
     w: Math.max(0, c.w - GAP), h: Math.max(0, c.h - GAP),
@@ -243,9 +241,9 @@ export default function App() {
   const curSym = currency === "EUR" ? "€" : "$";
 
   return (
-    <div className="app" ref={appRef}>
+    <div className="app">
       <style>{CSS}</style>
-
+      <div ref={wrapperRef}>
       {/* Top bar */}
       <header className="top">
         <div className="brand"><b>Portfolio</b> <span>Map</span></div>
@@ -303,33 +301,27 @@ export default function App() {
 
       {error && <div className="err">⚠ {error}</div>}
 
-      {/* Sentinel invisible — detecta cuando el mapa llega al top */}
-      <div ref={sentinelRef} style={{ height: 1, flexShrink: 0 }} />
+      </div>{/* fin wrapperRef */}
 
       {/* Heatmap */}
       <section
-        ref={sectionRef}
         className="card"
-        style={stickyH ? {
+        style={isFullscreen ? {
           position: 'sticky',
           top: 0,
           margin: 0,
           borderRadius: 0,
           padding: 0,
           zIndex: 10,
-          height: stickyH,
+          height: mapH,
           width: '100%',
+          background: '#131314',
         } : undefined}
       >
-        {/* div invisible solo para medir el ancho — no se mueve con sticky */}
-        <div ref={containerRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }} />
         <div
           ref={mapRef}
           className="map"
-          style={{
-            height: mapH,
-            width: stickyH ? mapW : undefined,
-          }}
+          style={{ height: mapH, width: isFullscreen ? mapW : undefined }}
         >
           {loading && items.length === 0 ? (
             <div className="loading"><div className="spinner" /></div>
