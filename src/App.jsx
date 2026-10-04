@@ -123,18 +123,15 @@ export default function App() {
   const [dispMode, setDispMode] = useState("pct");
   const [currency, setCurrency] = useState("EUR"); // EUR | USD
   const [hidden, setHidden] = useState(false);
+  const [showValue, setShowValue] = useState(false); // false=variación, true=valor en cartera
   const [sz, setSz] = useState({ w: 360, h: 500 });
   const mapRef = useRef(null);
   const timerRef = useRef(null);
 
   useEffect(() => {
     const calcH = (w) => {
-      // iPhone 15: 852px alto lógico. Queremos que el mapa llene la pantalla
-      // cuando solo se ve el mapa (header+resumen+chips han subido fuera).
-      // El mapa está dentro de .card con padding 18px top + 14px bottom = 32px.
-      // Solo restamos ese padding interno del card.
       const vh = window.innerHeight;
-      return vh - 32;
+      return vh - 70;
     };
     const obs = new ResizeObserver(entries => {
       for (const e of entries) {
@@ -189,6 +186,7 @@ export default function App() {
   const pctOf = c => c[cur.pctKey] ?? null;
   const colorOf = makeColorScale(items.map(pctOf).filter(v => v != null), metric);
   const dispOf = c => {
+    if (showValue) return fmtMoney(c.value, currency);
     const p = pctOf(c);
     if (p == null) return "—";
     return dispMode === "pct" ? fmtPct(p) : fmtK((p / 100) * c.value, currency);
@@ -239,6 +237,13 @@ export default function App() {
         <div className="summary">
           <div className="sumrow">
             <div className="total">{hidden ? "••••••" : fmtMoney(totalValue, currency)}</div>
+            <button className="eyebtn" onClick={() => setShowValue(v => !v)} aria-label={showValue ? "Ver variación" : "Ver valor"} title={showValue ? "Ver variación" : "Ver valor en cartera"}>
+              {showValue ? (
+                <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M11.5 2C6.81 2 3 5.81 3 10.5S6.81 19 11.5 19h.5v3c4.86-2.34 8-7 8-11.5C20 5.81 16.19 2 11.5 2zm1 14.5h-2v-2h2v2zm0-4h-2c0-3.25 3-3 3-5 0-1.1-.9-2-2-2s-2 .9-2 2h-2c0-2.21 1.79-4 4-4s4 1.79 4 4c0 2.5-3 2.75-3 5z"/></svg>
+              ) : (
+                <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1H8.1c.12 2.19 1.76 3.42 3.7 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg>
+              )}
+            </button>
             <button className="eyebtn" onClick={() => setHidden(h => !h)} aria-label={hidden ? "Mostrar" : "Ocultar"}>
               {hidden ? (
                 <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M11.83 9L15 12.16V12a3 3 0 0 0-3-3zm-4.3.8L9 12.06a3 3 0 0 0 3 2.94c.18 0 .36-.01.53-.05l1.37 1.37A5 5 0 0 1 12 17a5 5 0 0 1-5-5c0-.83.21-1.61.58-2.3m-4.6-3.52L4.27 7.5C3.08 8.45 2.08 9.64 1.35 11c1.56 2.73 4.65 4.7 8.65 4.7.92 0 1.82-.1 2.66-.29L14.7 17.44A10 10 0 0 1 10 18.7C4.67 18.7 1.17 15.4.18 11a10 10 0 0 1 2.75-4.72M10 5.3c5.33 0 8.83 3.3 9.82 7.7a10 10 0 0 1-3.73 5.72l-1.5-1.5A7.9 7.9 0 0 0 17.65 13C16.14 10.27 13.05 8.3 9.05 8.3c-.73 0-1.43.08-2.1.23L5.12 6.72A10 10 0 0 1 10 5.3m0 0"/></svg>
