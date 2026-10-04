@@ -443,3 +443,5 @@ button{font-family:inherit;color:inherit;border:none;background:none;cursor:poin
 .foot{margin-top:14px;font-size:11px;color:${C.faint};text-align:center}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes fade{from{opacity:0}}
+@keyframes up{from{transform:translateY(40px);opacity:.4}}
+`;
