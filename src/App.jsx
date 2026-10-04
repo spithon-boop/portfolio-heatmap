@@ -41,9 +41,6 @@ function squarify(nodes, x, y, w, h) {
   return results;
 }
 
-/* ─────────────────────────  Google Finance palette  ─────────────────────────
-   3 intensidades por signo, relativas al mayor movimiento del mismo signo
-   (como hace Google Finance): pequeño → claro, medio → medio, grande → oscuro. */
 const PAL = {
   up:   ["#64AE62", "#4A8A4B", "#1F4B22"],
   down: ["#9C4B4F", "#883B3F", "#6A2528"],
@@ -51,7 +48,6 @@ const PAL = {
   dotUp: "#8FE28F",
   dotDown: "#F7A6A9",
 };
-// Umbral mínimo por métrica para que movimientos pequeños no salgan "oscuros"
 const FLOOR = { total: 5, "1d": 0.5, "1w": 1.5, "1m": 3, ytd: 5 };
 
 function makeColorScale(values, metricKey) {
@@ -66,7 +62,6 @@ function makeColorScale(values, metricKey) {
   };
 }
 
-/* ─────────────────────────  Nombres y logos  ───────────────────────── */
 const NAMES = {
   NVDA: "NVIDIA", META: "Meta Platforms", MSFT: "Microsoft", GOOGL: "Alphabet", GOOG: "Alphabet",
   AAPL: "Apple", AMZN: "Amazon", TSLA: "Tesla", CRWD: "CrowdStrike", DDOG: "Datadog",
@@ -89,10 +84,18 @@ const initials = s => {
   return displaySym(s).slice(0, 2);
 };
 
-/* ─────────────────────────  Formato  ───────────────────────── */
+/* ─────────────────────────  Formato con divisa  ───────────────────────── */
 const fmtPct = v => `${(v || 0) >= 0 ? "+" : ""}${(v || 0).toFixed(2)}%`;
-const fmtUSD = v => `$${Math.abs(v || 0).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const fmtK = v => { const a = Math.abs(v || 0), s = (v || 0) >= 0 ? "+" : "-"; return `${s}$${a.toLocaleString("en", { maximumFractionDigits: 0 })}`; };
+const fmtMoney = (v, cur) => {
+  const sym = cur === "USD" ? "$" : "€";
+  return `${sym}${Math.abs(v || 0).toLocaleString("es", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+const fmtK = (v, cur) => {
+  const sym = cur === "USD" ? "$" : "€";
+  const a = Math.abs(v || 0);
+  const s = (v || 0) >= 0 ? "+" : "-";
+  return `${s}${sym}${a.toLocaleString("es", { maximumFractionDigits: 0 })}`;
+};
 const pnlCol = v => (v || 0) >= 0 ? "#8FE28F" : "#F7A6A9";
 
 const METRICS = [
@@ -118,6 +121,8 @@ export default function App() {
   const [detail, setDetail] = useState(null);
   const [metric, setMetric] = useState("1d");
   const [dispMode, setDispMode] = useState("pct");
+  const [currency, setCurrency] = useState("EUR"); // EUR | USD
+  const [hidden, setHidden] = useState(false);
   const [sz, setSz] = useState({ w: 360, h: 500 });
   const mapRef = useRef(null);
   const timerRef = useRef(null);
@@ -130,10 +135,11 @@ export default function App() {
     return () => obs.disconnect();
   }, []);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (cur) => {
+    const activeCur = cur || currency;
     setLoading(true); setError(null);
     try {
-      const res = await fetch("/api/quotes");
+      const res = await fetch(`/api/quotes?currency=${activeCur}`);
       if (!res.ok) throw new Error(`Error ${res.status}`);
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -141,24 +147,31 @@ export default function App() {
       setLastUpdated(new Date());
     } catch (e) { setError(e.message); }
     finally { setLoading(false); }
-  }, []);
+  }, [currency]);
 
   useEffect(() => {
     fetchData();
-    timerRef.current = setInterval(fetchData, 120000);
+    timerRef.current = setInterval(() => fetchData(), 120000);
     return () => clearInterval(timerRef.current);
   }, [fetchData]);
 
+  // Refetch when currency changes
+  const toggleCurrency = () => {
+    const next = currency === "EUR" ? "USD" : "EUR";
+    setCurrency(next);
+    fetchData(next);
+  };
+
   const items = holdings.filter(h => h.value > 0).map(h => {
-    const cost = h.shares * h.avgCost;
+    const cost = h.cost ?? h.shares * h.avgCost;
     const pnl = h.value - cost;
-    const pnlPct = cost > 0 ? ((h.price - h.avgCost) / h.avgCost) * 100 : 0;
+    const pnlPct = cost > 0 ? ((h.value - cost) / cost) * 100 : 0;
     return { ...h, cost, pnl, pnlPct };
   }).sort((a, b) => b.value - a.value);
 
   const totalValue = items.reduce((s, i) => s + i.value, 0);
-  const totalCost = items.reduce((s, i) => s + i.cost, 0);
-  const totalPnL = totalValue - totalCost;
+  const totalCost  = items.reduce((s, i) => s + i.cost, 0);
+  const totalPnL   = totalValue - totalCost;
   const totalPnLPct = totalCost > 0 ? (totalPnL / totalCost) * 100 : 0;
 
   const cur = METRICS.find(m => m.key === metric);
@@ -167,17 +180,14 @@ export default function App() {
   const dispOf = c => {
     const p = pctOf(c);
     if (p == null) return "—";
-    return dispMode === "pct" ? fmtPct(p) : fmtK((p / 100) * c.value);
+    return dispMode === "pct" ? fmtPct(p) : fmtK((p / 100) * c.value, currency);
   };
 
-  // Calcula el treemap con margen extra para que el gap exterior quede alineado al borde
   const cells = buildTreemap(items, sz.w + GAP, sz.h + GAP).map(c => ({
-    ...c,
-    x: c.x, y: c.y,
+    ...c, x: c.x, y: c.y,
     w: Math.max(0, c.w - GAP), h: Math.max(0, c.h - GAP),
   }));
 
-  // "Performance Temperature"
   const withData = items.filter(i => pctOf(i) != null);
   const wVal = withData.reduce((s, i) => s + i.value, 0);
   const avg = wVal ? withData.reduce((s, i) => s + i.value * pctOf(i), 0) / wVal : null;
@@ -189,15 +199,21 @@ export default function App() {
     ? `mixta con una tendencia ligeramente ${avg >= 0 ? "positiva" : "negativa"}`
     : avg >= 0 ? "positiva" : "negativa";
 
+  const curSym = currency === "EUR" ? "€" : "$";
+
   return (
     <div className="app">
       <style>{CSS}</style>
 
-      {/* Top bar estilo Google Finance */}
+      {/* Top bar */}
       <header className="top">
         <div className="brand"><b>Portfolio</b> <span>Map</span></div>
         <div className="actions">
-          <button className={`icon${loading ? " spin" : ""}`} onClick={fetchData} aria-label="Refrescar">
+          {/* Botón EUR/USD */}
+          <button className="curbtn" onClick={toggleCurrency} title="Cambiar divisa">
+            {currency === "EUR" ? "€ EUR" : "$ USD"}
+          </button>
+          <button className={`icon${loading ? " spin" : ""}`} onClick={() => fetchData()} aria-label="Refrescar">
             <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
           </button>
           <a className="icon" href="https://docs.google.com/spreadsheets/d/1k1wbKI5hTN88ibWJ_wm0sWnG-wWvvkiAxs6jHlYuJgo" target="_blank" rel="noreferrer" aria-label="Google Sheets">
@@ -210,9 +226,18 @@ export default function App() {
       {/* Resumen */}
       {items.length > 0 && (
         <div className="summary">
-          <div className="total">{fmtUSD(totalValue)}</div>
-          <div className="pnl" style={{ color: pnlCol(totalPnL) }}>
-            {totalPnL >= 0 ? "▲" : "▼"} {totalPnL >= 0 ? "+" : "-"}{fmtUSD(totalPnL)} ({fmtPct(totalPnLPct)})
+          <div className="sumrow">
+            <div className="total">{hidden ? "••••••" : fmtMoney(totalValue, currency)}</div>
+            <button className="eyebtn" onClick={() => setHidden(h => !h)} aria-label={hidden ? "Mostrar" : "Ocultar"}>
+              {hidden ? (
+                <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M11.83 9L15 12.16V12a3 3 0 0 0-3-3zm-4.3.8L9 12.06a3 3 0 0 0 3 2.94c.18 0 .36-.01.53-.05l1.37 1.37A5 5 0 0 1 12 17a5 5 0 0 1-5-5c0-.83.21-1.61.58-2.3m-4.6-3.52L4.27 7.5C3.08 8.45 2.08 9.64 1.35 11c1.56 2.73 4.65 4.7 8.65 4.7.92 0 1.82-.1 2.66-.29L14.7 17.44A10 10 0 0 1 10 18.7C4.67 18.7 1.17 15.4.18 11a10 10 0 0 1 2.75-4.72M10 5.3c5.33 0 8.83 3.3 9.82 7.7a10 10 0 0 1-3.73 5.72l-1.5-1.5A7.9 7.9 0 0 0 17.65 13C16.14 10.27 13.05 8.3 9.05 8.3c-.73 0-1.43.08-2.1.23L5.12 6.72A10 10 0 0 1 10 5.3m0 0"/></svg>
+              ) : (
+                <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></svg>
+              )}
+            </button>
+          </div>
+          <div className="pnl" style={{ color: hidden ? C.faint : pnlCol(totalPnL) }}>
+            {hidden ? "•••••• (••••)" : `${totalPnL >= 0 ? "▲" : "▼"} ${totalPnL >= 0 ? "+" : "-"}${fmtMoney(totalPnL, currency)} (${fmtPct(totalPnLPct)})`}
             <span className="muted"> · {items.length} posiciones{lastUpdated ? ` · ${lastUpdated.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })}` : ""}</span>
           </div>
         </div>
@@ -230,14 +255,14 @@ export default function App() {
           </div>
           <div className="seg">
             <button className={dispMode === "pct" ? "on" : ""} onClick={() => setDispMode("pct")}>%</button>
-            <button className={dispMode === "usd" ? "on" : ""} onClick={() => setDispMode("usd")}>$</button>
+            <button className={dispMode === "usd" ? "on" : ""} onClick={() => setDispMode("usd")}>{curSym}</button>
           </div>
         </div>
       )}
 
       {error && <div className="err">⚠ {error}</div>}
 
-      {/* Tarjeta del heatmap */}
+      {/* Heatmap */}
       <section className="card">
         <h2>Sus inversiones visualizadas</h2>
         <p className="sub">El tamaño del cuadro representa el peso proporcional del recurso en tu cartera. El color indica el rendimiento {cur.key === "1d" ? "de hoy" : cur.key === "total" ? "total desde la compra" : `(${cur.label})`}.</p>
@@ -286,21 +311,22 @@ export default function App() {
         )}
       </section>
 
-      {/* Detalle (bottom sheet Material) */}
+      {/* Detalle */}
       {detail && (() => {
         const d = detail;
         const wt = totalValue > 0 ? (d.value / totalValue * 100).toFixed(2) : "0";
         const rows = [
-          ["Precio actual", fmtUSD(d.price)],
-          ["Precio medio", fmtUSD(d.avgCost)],
-          ["Valor actual", fmtUSD(d.value)],
-          ["Coste total", fmtUSD(d.cost)],
-          ["P&L ($)", `${d.pnl >= 0 ? "+" : "-"}${fmtUSD(d.pnl)}`, pnlCol(d.pnl)],
-          ["P&L (%)", fmtPct(d.pnlPct), pnlCol(d.pnlPct)],
-          ["Hoy", d.chg1d != null ? fmtPct(d.chg1d) : "—", d.chg1d != null ? pnlCol(d.chg1d) : null],
-          ["1 semana", d.chg1w != null ? fmtPct(d.chg1w) : "—", d.chg1w != null ? pnlCol(d.chg1w) : null],
-          ["1 mes", d.chg1m != null ? fmtPct(d.chg1m) : "—", d.chg1m != null ? pnlCol(d.chg1m) : null],
-          ["YTD", d.chgYtd != null ? fmtPct(d.chgYtd) : "—", d.chgYtd != null ? pnlCol(d.chgYtd) : null],
+          ["Precio actual",   fmtMoney(d.price, currency)],
+          ["Precio medio",    fmtMoney(d.avgCost, currency)],
+          ["Valor actual",    fmtMoney(d.value, currency)],
+          ["Coste total",     fmtMoney(d.cost, currency)],
+          ["P&L",             `${d.pnl >= 0 ? "+" : "-"}${fmtMoney(d.pnl, currency)}`, pnlCol(d.pnl)],
+          ["P&L (%)",         fmtPct(d.pnlPct), pnlCol(d.pnlPct)],
+          ["Divisa original", d.divisa || "—"],
+          ["Hoy",             d.chg1d  != null ? fmtPct(d.chg1d)  : "—", d.chg1d  != null ? pnlCol(d.chg1d)  : null],
+          ["1 semana",        d.chg1w  != null ? fmtPct(d.chg1w)  : "—", d.chg1w  != null ? pnlCol(d.chg1w)  : null],
+          ["1 mes",           d.chg1m  != null ? fmtPct(d.chg1m)  : "—", d.chg1m  != null ? pnlCol(d.chg1m)  : null],
+          ["YTD",             d.chgYtd != null ? fmtPct(d.chgYtd) : "—", d.chgYtd != null ? pnlCol(d.chgYtd) : null],
         ];
         return (
           <div className="scrim" onClick={() => setDetail(null)}>
@@ -310,14 +336,14 @@ export default function App() {
                 <Logo sym={d.symbol} pos="inline" />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="stk">{displaySym(d.symbol)}</div>
-                  <div className="snm">{nameOf(d.symbol) || "—"} · {wt}% de la cartera · {d.shares} acciones</div>
+                  <div className="snm">{nameOf(d.symbol) || "—"} · {wt}% · {d.shares} acciones</div>
                 </div>
                 <button className="icon" onClick={() => setDetail(null)} aria-label="Cerrar">✕</button>
               </div>
               {rows.map(([l, v, c]) => (
                 <div key={l} className="srow"><span>{l}</span><b style={{ color: c || C.text }}>{v}</b></div>
               ))}
-              <div className="foot">Google Sheets · GOOGLEFINANCE() · {lastUpdated?.toLocaleTimeString("es")}</div>
+              <div className="foot">Yahoo Finance via Google Sheets · {currency} · {lastUpdated?.toLocaleTimeString("es")}</div>
             </div>
           </div>
         );
@@ -352,9 +378,14 @@ button{font-family:inherit;color:inherit;border:none;background:none;cursor:poin
 .icon{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;color:${C.dim};text-decoration:none;font-size:16px}
 .icon:active{background:rgba(255,255,255,.08)}
 .icon.spin svg{animation:spin 0.9s linear infinite}
+.curbtn{height:32px;padding:0 12px;border-radius:16px;border:1px solid ${C.line};color:${C.chipOnTxt};background:${C.chipOn};font-size:13px;font-weight:600;letter-spacing:0.3px;flex-shrink:0}
+.curbtn:active{opacity:0.8}
 .avatar{width:36px;height:36px;border-radius:50%;background:#7E57C2;color:#fff;display:grid;place-items:center;font-weight:500;font-size:16px;margin-left:4px}
 .summary{padding:2px 20px 10px;flex-shrink:0}
+.sumrow{display:flex;align-items:center;gap:10px}
 .total{font-size:30px;font-weight:400;color:#fff;letter-spacing:-0.3px}
+.eyebtn{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;color:${C.faint};flex-shrink:0;margin-top:2px}
+.eyebtn:active{background:rgba(255,255,255,.08)}
 .pnl{font-size:14px;margin-top:2px;font-weight:500}
 .muted{color:${C.faint};font-weight:400}
 .chips{display:flex;align-items:center;gap:8px;padding:0 16px 12px;flex-shrink:0}
