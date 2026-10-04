@@ -228,9 +228,20 @@ export default function App() {
       <header className="top">
         <div className="brand"><b>Portfolio</b> <span>Map</span></div>
         <div className="actions">
-          {/* Botón EUR/USD */}
           <button className="curbtn" onClick={toggleCurrency} title="Cambiar divisa">
             {currency === "EUR" ? "€ EUR" : "$ USD"}
+          </button>
+          <button className={`iconbtn${showValue ? " on" : ""}`} onClick={() => setShowValue(v => !v)} title={showValue ? "Ver variación" : "Ver valor"}>
+            {showValue
+              ? <svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1H8.1c.12 2.19 1.76 3.42 3.7 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg>
+              : <svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M7 14l5-5 5 5H7z"/></svg>
+            }
+          </button>
+          <button className={`iconbtn${hidden ? " on" : ""}`} onClick={() => setHidden(h => !h)} title={hidden ? "Mostrar" : "Ocultar"}>
+            {hidden
+              ? <svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M11.83 9L15 12.16V12a3 3 0 0 0-3-3zm-4.3.8L9 12.06a3 3 0 0 0 3 2.94c.18 0 .36-.01.53-.05l1.37 1.37A5 5 0 0 1 12 17a5 5 0 0 1-5-5c0-.83.21-1.61.58-2.3m-4.6-3.52L4.27 7.5C3.08 8.45 2.08 9.64 1.35 11c1.56 2.73 4.65 4.7 8.65 4.7.92 0 1.82-.1 2.66-.29L14.7 17.44A10 10 0 0 1 10 18.7C4.67 18.7 1.17 15.4.18 11a10 10 0 0 1 2.75-4.72M10 5.3c5.33 0 8.83 3.3 9.82 7.7a10 10 0 0 1-3.73 5.72l-1.5-1.5A7.9 7.9 0 0 0 17.65 13C16.14 10.27 13.05 8.3 9.05 8.3c-.73 0-1.43.08-2.1.23L5.12 6.72A10 10 0 0 1 10 5.3m0 0"/></svg>
+              : <svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></svg>
+            }
           </button>
           <button className={`icon${loading ? " spin" : ""}`} onClick={() => fetchData()} aria-label="Refrescar">
             <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
@@ -245,23 +256,7 @@ export default function App() {
       {/* Resumen */}
       {items.length > 0 && (
         <div className="summary">
-          <div className="sumrow">
-            <div className="total">{hidden ? "••••••" : fmtMoney(totalValue, currency)}</div>
-            <button className="eyebtn" onClick={() => setShowValue(v => !v)} aria-label={showValue ? "Ver variación" : "Ver valor"} title={showValue ? "Ver variación" : "Ver valor en cartera"}>
-              {showValue ? (
-                <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M11.5 2C6.81 2 3 5.81 3 10.5S6.81 19 11.5 19h.5v3c4.86-2.34 8-7 8-11.5C20 5.81 16.19 2 11.5 2zm1 14.5h-2v-2h2v2zm0-4h-2c0-3.25 3-3 3-5 0-1.1-.9-2-2-2s-2 .9-2 2h-2c0-2.21 1.79-4 4-4s4 1.79 4 4c0 2.5-3 2.75-3 5z"/></svg>
-              ) : (
-                <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1H8.1c.12 2.19 1.76 3.42 3.7 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg>
-              )}
-            </button>
-            <button className="eyebtn" onClick={() => setHidden(h => !h)} aria-label={hidden ? "Mostrar" : "Ocultar"}>
-              {hidden ? (
-                <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M11.83 9L15 12.16V12a3 3 0 0 0-3-3zm-4.3.8L9 12.06a3 3 0 0 0 3 2.94c.18 0 .36-.01.53-.05l1.37 1.37A5 5 0 0 1 12 17a5 5 0 0 1-5-5c0-.83.21-1.61.58-2.3m-4.6-3.52L4.27 7.5C3.08 8.45 2.08 9.64 1.35 11c1.56 2.73 4.65 4.7 8.65 4.7.92 0 1.82-.1 2.66-.29L14.7 17.44A10 10 0 0 1 10 18.7C4.67 18.7 1.17 15.4.18 11a10 10 0 0 1 2.75-4.72M10 5.3c5.33 0 8.83 3.3 9.82 7.7a10 10 0 0 1-3.73 5.72l-1.5-1.5A7.9 7.9 0 0 0 17.65 13C16.14 10.27 13.05 8.3 9.05 8.3c-.73 0-1.43.08-2.1.23L5.12 6.72A10 10 0 0 1 10 5.3m0 0"/></svg>
-              ) : (
-                <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></svg>
-              )}
-            </button>
-          </div>
+          <div className="total">{hidden ? "••••••" : fmtMoney(totalValue, currency)}</div>
           <div className="pnl" style={{ color: hidden ? C.faint : pnlCol(summaryPnL) }}>
             {hidden ? "•••••• (••••)" : `${summaryPnL >= 0 ? "▲" : "▼"} ${summaryPnL >= 0 ? "+" : "-"}${fmtMoney(Math.abs(summaryPnL), currency)} (${fmtPct(summaryPnLPct)})`}
             <span className="muted"> · {items.length} posiciones{lastUpdated ? ` · ${lastUpdated.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })}` : ""}</span>
@@ -403,6 +398,9 @@ button{font-family:inherit;color:inherit;border:none;background:none;cursor:poin
 .icon.spin svg{animation:spin 0.9s linear infinite}
 .curbtn{height:32px;padding:0 12px;border-radius:16px;border:1px solid ${C.line};color:${C.chipOnTxt};background:${C.chipOn};font-size:13px;font-weight:600;letter-spacing:0.3px;flex-shrink:0}
 .curbtn:active{opacity:0.8}
+.iconbtn{width:32px;height:32px;border-radius:50%;border:1.5px solid ${C.line};display:grid;place-items:center;color:${C.dim};flex-shrink:0;transition:all .15s}
+.iconbtn.on{border-color:${C.chipOn};background:${C.chipOn};color:${C.chipOnTxt}}
+.iconbtn:active{opacity:0.8}
 .avatar{width:36px;height:36px;border-radius:50%;background:#7E57C2;color:#fff;display:grid;place-items:center;font-weight:500;font-size:16px;margin-left:4px}
 .summary{padding:2px 20px 10px;flex-shrink:0}
 .sumrow{display:flex;align-items:center;gap:10px}
