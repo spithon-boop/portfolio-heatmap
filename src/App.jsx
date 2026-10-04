@@ -138,25 +138,27 @@ export default function App() {
     return () => obs.disconnect();
   }, []);
 
-  // Sticky map: cuando el section llega al top, calculamos altura disponible = 100dvh
+  // Sentinel: un div invisible justo ANTES del section.
+  // Cuando sale del viewport por arriba → el mapa ocupa 100dvh (sticky).
+  // Cuando vuelve → volvemos al tamaño normal.
+  const sentinelRef = useRef(null);
   useEffect(() => {
-    const app = appRef.current;
-    if (!app) return;
-    const handleScroll = () => {
-      const section = sectionRef.current;
-      if (!section) return;
-      const rect = section.getBoundingClientRect();
-      const safeTop = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sat') || '0');
-      if (rect.top <= safeTop + 1) {
-        // El section llegó al top: altura del mapa = viewport - padding del section
-        const available = window.innerHeight - safeTop - 32; // 32 = padding interno del card
-        setStickyH(Math.max(300, available));
-      } else {
-        setStickyH(null);
-      }
-    };
-    app.addEventListener('scroll', handleScroll, { passive: true });
-    return () => app.removeEventListener('scroll', handleScroll);
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry.isIntersecting) {
+          // Sentinel salió por arriba: mapa sticky a pantalla completa
+          const available = window.innerHeight - 32;
+          setStickyH(Math.max(300, available));
+        } else {
+          setStickyH(null);
+        }
+      },
+      { threshold: 0, rootMargin: '0px 0px 0px 0px' }
+    );
+    obs.observe(sentinel);
+    return () => obs.disconnect();
   }, []);
 
   const fetchData = useCallback(async (cur) => {
@@ -297,6 +299,9 @@ export default function App() {
 
       {error && <div className="err">⚠ {error}</div>}
 
+      {/* Sentinel invisible — detecta cuando el mapa llega al top */}
+      <div ref={sentinelRef} style={{ height: 1, flexShrink: 0 }} />
+
       {/* Heatmap */}
       <section
         ref={sectionRef}
@@ -412,7 +417,7 @@ const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,400;6..144,500;6..144,700&family=Roboto:wght@400;500;700&display=swap');
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{background:${C.bg};overscroll-behavior:none}
-.app{height:100dvh;display:flex;flex-direction:column;overflow-y:auto;-webkit-overflow-scrolling:touch;background:${C.bg};color:${C.text};
+.app{min-height:100dvh;display:flex;flex-direction:column;background:${C.bg};color:${C.text};
   font-family:'Google Sans Flex','Google Sans','Roboto',-apple-system,BlinkMacSystemFont,sans-serif;
   padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
 button{font-family:inherit;color:inherit;border:none;background:none;cursor:pointer}
