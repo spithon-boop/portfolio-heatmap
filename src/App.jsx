@@ -129,10 +129,12 @@ export default function App() {
 
   useEffect(() => {
     const calcH = (w) => {
-      // Altura = viewport completo menos: header(56) + resumen(64) + chips(52) + padding card(32) + safe areas(~16)
-      const aboveMap = 56 + 64 + 52 + 32 + 16;
+      // iPhone 15: 852px alto lógico. Queremos que el mapa llene la pantalla
+      // cuando solo se ve el mapa (header+resumen+chips han subido fuera).
+      // El mapa está dentro de .card con padding 18px top + 14px bottom = 32px.
+      // Solo restamos ese padding interno del card.
       const vh = window.innerHeight;
-      return Math.max(Math.round(w * 1.45), vh - aboveMap);
+      return vh - 32;
     };
     const obs = new ResizeObserver(entries => {
       for (const e of entries) {
@@ -441,5 +443,3 @@ button{font-family:inherit;color:inherit;border:none;background:none;cursor:poin
 .foot{margin-top:14px;font-size:11px;color:${C.faint};text-align:center}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes fade{from{opacity:0}}
-@keyframes up{from{transform:translateY(40px);opacity:.4}}
-`;
